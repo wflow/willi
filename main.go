@@ -33,7 +33,7 @@ func main() {
 	if *verboseFlag {
 		logLevel = log.LvlDebug
 	}
-	log.Root().SetHandler(log.LvlFilterHandler(logLevel, log.StdoutHandler))
+	log.Root().SetHandler(log.LvlFilterHandler(logLevel, log.StreamHandler(os.Stdout, LogfmtFormatWithoutTimestamp())))
 
 	log.Info("Loading config file", "config", *configFileFlag)
 	config, err := loadConfigFile(*configFileFlag)
