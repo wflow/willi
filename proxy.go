@@ -106,7 +106,7 @@ func (s *ProxySession) Rcpt(to string) error {
 
 func (s *ProxySession) Data(r io.Reader) error {
 	if s.client == nil {
-		return &smtp.SMTPError{Code: 500, EnhancedCode: smtp.EnhancedCode{5, 0, 0}, Message: "Invalid SMTP command order"}
+		return fmt.Errorf("SMTP client is unexpectedly nil")
 	}
 
 	w, err := s.client.Data()
