@@ -30,11 +30,10 @@ func (b *ProxyBackend) Login(_ *smtp.ConnectionState, username, password string)
 }
 
 func (b *ProxyBackend) AnonymousLogin(s *smtp.ConnectionState) (smtp.Session, error) {
-	// FIXME log TLS stuff
-
 	logger := log.New("session", randSeq(10))
 
-	logger.Debug("HELO/EHLO", "client_ip", s.RemoteAddr, "client_helo", s.Hostname)
+	logger.Debug("TLS", "connection_state", s)
+	logger.Debug("HELO/EHLO", "client_ip", s.RemoteAddr, "client_helo", s.Hostname, "tls", s.TLS.HandshakeComplete)
 
 	return &LoggingSession{
 		log: logger,
@@ -44,8 +43,11 @@ func (b *ProxyBackend) AnonymousLogin(s *smtp.ConnectionState) (smtp.Session, er
 
 			clientHelo: s.Hostname,
 			clientAddr: s.RemoteAddr,
+			clientTls:  s.TLS.HandshakeComplete,
 
 			helo: b.domain,
+
+			msg: buildZeroProxyMessage(),
 		},
 	}, nil
 }
@@ -68,6 +70,7 @@ type ProxySession struct {
 
 	clientHelo string
 	clientAddr net.Addr
+	clientTls  bool
 
 	helo string
 
@@ -83,7 +86,22 @@ type ProxyMessage struct {
 	server string
 
 	client *smtp.Client // this is the client used to connect to the backend smtp server!
+	tls    bool
 	opts   smtp.MailOptions
+}
+
+func buildProxyMessage(from string, opts smtp.MailOptions) ProxyMessage {
+	return ProxyMessage{
+		id:    randSeq(10),
+		from:  from,
+		rcpts: make([]string, 0),
+
+		opts: opts,
+	}
+}
+
+func buildZeroProxyMessage() ProxyMessage {
+	return buildProxyMessage("", smtp.MailOptions{})
 }
 
 func (s *ProxySession) getServer(recipient string) (string, error) {
@@ -110,21 +128,14 @@ func (s *ProxySession) getServer(recipient string) (string, error) {
 }
 
 func (s *ProxySession) Mail(from string, opts smtp.MailOptions) error {
-	s.msg = ProxyMessage{
-		id:    randSeq(10),
-		from:  from,
-		rcpts: make([]string, 0),
-
-		opts: opts,
-	}
-
+	s.msg = buildProxyMessage(from, opts)
 	return nil
 }
 
 func (s *ProxySession) Rcpt(to string) error {
-	if s.msg.client == nil {
-		s.msg.rcpts = append(s.msg.rcpts, to)
+	s.msg.rcpts = append(s.msg.rcpts, to)
 
+	if s.msg.client == nil {
 		server, err := s.getServer(to)
 		if err == ErrNotFound {
 			return ErrRelayAccessDenied
@@ -134,6 +145,7 @@ func (s *ProxySession) Rcpt(to string) error {
 		}
 
 		s.msg.server = server
+		s.log.Debug("Using backend", "relay", server)
 
 		c, err := smtp.Dial(s.msg.server)
 		if err != nil {
@@ -145,15 +157,16 @@ func (s *ProxySession) Rcpt(to string) error {
 			return err
 		}
 
-		if ok, _ := s.msg.client.Extension("STARTTLS"); ok { // FIXME only allow to skip tls if client connection is also plain?
+		if ok, _ := s.msg.client.Extension("STARTTLS"); ok || !s.clientTls { // if client connection is plain, plain is ok
 			s.log.Debug("Trying STARTTLS with backend")
 
 			cfg := &tls.Config{
 				//InsecureSkipVerify: true,
 			}
 			if err := s.msg.client.StartTLS(cfg); err != nil {
-				return err // FIXME Retry without TLS instead?
+				return err
 			}
+			s.msg.tls = true
 		}
 
 		if err := s.msg.client.Mail(s.msg.from, &s.msg.opts); err != nil {
@@ -200,13 +213,7 @@ func (s *ProxySession) Reset() { // called after each message DATA
 		}
 	}
 
-	s.msg = ProxyMessage{}
-}
-
-func (s *ProxySession) ResetWithResult() ProxyMessage {
-	msg := s.msg
-	s.Reset()
-	return msg
+	s.msg = buildZeroProxyMessage()
 }
 
 func (s *ProxySession) Logout() error {
@@ -241,25 +248,56 @@ func (s *LoggingSession) Rcpt(to string) error {
 
 func (s *LoggingSession) Data(r io.Reader) error {
 	err := s.delegate.Data(r)
-
 	s.logDebug(err, "DATA")
+
+	if err == nil {
+		s.log.Info("Message accepted", s.getCanonicalLogLineCtx()...)
+	}
+
 	return s.wrapError(err)
 }
 
 func (s *LoggingSession) Reset() {
-	msg := s.delegate.ResetWithResult()
+	// Called after each DATA, but also if client sends RSET
 
-	s.log.Info("Message accepted", "msg", msg.id,
-		"client_ip", s.delegate.clientAddr, "client_helo", s.delegate.clientHelo,
-		"from", msg.from, "to", strings.Join(msg.rcpts, ","), "relay", msg.server,
-		"error", s.lastError)
+	s.delegate.Reset()
+	s.log.Debug("Reset")
+
+	s.lastError = nil
 }
 
 func (s *LoggingSession) Logout() error {
+	// Called when client disconnects (QUIT), or closes the connection
+
 	err := s.delegate.Logout()
 	s.logDebug(err, "Logout")
+
+	if s.lastError != nil {
+		s.log.Info("Message rejected", s.getCanonicalLogLineCtx()...)
+	}
+
 	smtpError := s.wrapError(err)
+	s.lastError = nil
+
 	return smtpError
+}
+
+func (s *LoggingSession) getCanonicalLogLineCtx() []interface{} {
+	session := s.delegate
+	msg := session.msg
+
+	ctx := []interface{}{
+		"msg", msg.id,
+		"client_ip", session.clientAddr, "client_helo", session.clientHelo, "client_tls", session.clientTls,
+		"from", msg.from, "to", strings.Join(msg.rcpts, ","),
+		"relay", msg.server, "relay_tls", msg.tls,
+	}
+
+	if s.lastError != nil {
+		ctx = append(ctx, "error", s.formatError(s.lastError))
+	}
+
+	return ctx
 }
 
 func (s *LoggingSession) logDebug(err error, msg string, ctx ...interface{}) {
@@ -283,5 +321,20 @@ func (s *LoggingSession) wrapError(err error) error {
 			EnhancedCode: smtp.NoEnhancedCode,
 			Message:      "Internal server error",
 		}
+	}
+}
+
+func (s *LoggingSession) formatError(err error) string {
+	switch err.(type) {
+	case nil:
+		return "nil"
+	case *smtp.SMTPError:
+		smtpErr := err.(*smtp.SMTPError)
+
+		return fmt.Sprintf("%d %d.%d.%d %s", smtpErr.Code,
+			smtpErr.EnhancedCode[0], smtpErr.EnhancedCode[1], smtpErr.EnhancedCode[2],
+			smtpErr.Message)
+	default:
+		return err.Error()
 	}
 }
