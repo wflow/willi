@@ -1,0 +1,30 @@
+[server]
+listen = ":25"
+domain = "mail.example.com"
+
+read_timeout = "10s"
+write_timeout = "10s"
+max_message_bytes = "20mib"
+max_recipients = "50"
+
+#tls_cert = "/opt/smtp-proxy/etc/smtp-proxy/server.crt"
+#tls_key = "/opt/smtp-proxy/smtp-proxy/server.key"
+
+#[mappings.firstsql]
+#type = "sql"
+#connection="root:password@tcp(:3306)/smtp-proxy"
+#query="SELECT host, port FROM upstream_servers WHERE key = ?"
+
+#[mappings.secondsql]
+#type = "sql"
+#connection="user:pass@tcp(otherserver:3306)/smtp-proxy-fallback"
+#query="SELECT host, port FROM upstream_servers WHERE key = ?"
+
+#[mappings.csv]
+#type = "csv"
+#file = "/opt/smtp-proxy/upstream_servers.csv"
+
+#[mappings.static]
+#type = "static"
+#server = "mail.example.org"
+#port = 25

@@ -1,0 +1,17 @@
+[Unit]
+Description=SMTP Proxy
+After=network.target
+
+[Service]
+User=smtp-proxy
+WorkingDirectory=/opt/smtp-proxy
+ExecStart=/opt/smtp-proxy/smtp-proxy -c ./etc/smtp-proxy.conf
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+SyslogIdentifier=smtp-proxy
+SyslogFacility=mail
+Restart=on-failure
+RestartSec=5s
+
+
+[Install]
+WantedBy=multi-user.target
