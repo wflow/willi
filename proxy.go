@@ -12,6 +12,12 @@ import (
 	"github.com/emersion/go-smtp"
 )
 
+var ErrRelayAccessDenied = &smtp.SMTPError{
+	Code:         554,
+	EnhancedCode: smtp.EnhancedCode{5, 7, 1},
+	Message:      "Relay access denied",
+}
+
 // The ProxyBackend implements SMTP server methods.
 type ProxyBackend struct {
 	mappings []ServerMap
@@ -53,7 +59,7 @@ func (s *ProxySession) getServer(recipient string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("No mapping found for %s", recipient)
+	return "", ErrNotFound
 }
 
 func (s *ProxySession) Mail(from string, opts smtp.MailOptions) error {
@@ -66,8 +72,11 @@ func (s *ProxySession) Mail(from string, opts smtp.MailOptions) error {
 func (s *ProxySession) Rcpt(to string) error {
 	if s.client == nil {
 		server, err := s.getServer(to)
+		if err == ErrNotFound {
+			return ErrRelayAccessDenied
+		}
 		if err != nil {
-			return err // TODO convert to something like 'relay access denied'
+			return err
 		}
 
 		c, err := smtp.Dial(server)
