@@ -3,44 +3,49 @@ package main
 import (
 	"crypto/tls"
 	"flag"
-	"log"
+	"fmt"
 	"os"
 
 	"github.com/emersion/go-smtp"
+	log "github.com/inconshreveable/log15"
 )
 
 var (
-	versionFlag    = flag.Bool("V", false, "Print version and exit")
 	configFileFlag = flag.String("c", "config.conf", "Path to configuration file")
+	versionFlag    = flag.Bool("V", false, "Print version and exit")
+	verboseFlag    = flag.Bool("v", false, "Verbose output")
 	version        = "undefined" // updated during release build
 )
 
-const (
-	defaultDebug    = false
-	defaultListen   = "127.0.0.1:10025"
-	defaultCertsDir = "."
-)
-
 func main() {
-	// Remove date + time from logging output (systemd adds those for us)
-	log.SetFlags(log.Flags() &^ (log.Ldate | log.Ltime))
 
 	flag.Parse()
 
 	if *versionFlag {
-		log.Printf("UNNAMED - version %s\n", version)
+		fmt.Printf("UNNAMED - version %s\n", version)
 		os.Exit(0)
 	}
 
-	log.Println("Loading config file", *configFileFlag)
-	config := loadConfigFile(*configFileFlag)
+	logLevel := log.LvlInfo
+	if *verboseFlag {
+		logLevel = log.LvlDebug
+	}
+	log.Root().SetHandler(log.LvlFilterHandler(logLevel, log.StdoutHandler))
+
+	log.Info("Loading config file", "config", *configFileFlag)
+	config, err := loadConfigFile(*configFileFlag)
+	if err != nil {
+		log.Error("Failed to load config file", "error", err)
+		os.Exit(1)
+	}
 
 	var tlsConfig *tls.Config
 	if config.tlsCert != "" && config.tlsKey != "" {
 
 		cer, err := tls.LoadX509KeyPair(config.tlsCert, config.tlsKey)
 		if err != nil {
-			log.Fatal(err)
+			log.Error("Failed to load TLS key/cert", "error", err)
+			os.Exit(1)
 		}
 
 		tlsConfig = &tls.Config{Certificates: []tls.Certificate{cer}}
@@ -50,7 +55,8 @@ func main() {
 	for _, mappingConfig := range config.mappingConfigs {
 		mapping, err := mappingConfig.CreateMapping()
 		if err != nil {
-			log.Fatal(err)
+			log.Error("Failed to create mapping", "error", err)
+			os.Exit(1)
 		}
 		mappings = append(mappings, mapping)
 	}
@@ -70,8 +76,9 @@ func main() {
 	s.AuthDisabled = true
 	s.TLSConfig = tlsConfig
 
-	log.Println("Starting server at", s.Addr)
+	log.Info("Starting server", "address", s.Addr)
 	if err := s.ListenAndServe(); err != nil {
-		log.Fatal(err)
+		log.Error("Failed to start server", "error", err)
+		os.Exit(1)
 	}
 }

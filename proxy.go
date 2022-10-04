@@ -4,9 +4,10 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"strings"
+
+	log "github.com/inconshreveable/log15"
 
 	"github.com/emersion/go-smtp"
 )
@@ -34,10 +35,8 @@ type ProxySession struct {
 
 func (s *ProxySession) getServer(recipient string) (string, error) {
 	for _, mapping := range s.mappings {
-		log.Println("Checking mapping", mapping)
 		server, err := mapping.GetServer(recipient)
 		if err == nil {
-			log.Println("Found", server, "for", recipient)
 			return server, nil
 		}
 
@@ -61,8 +60,6 @@ func (s *ProxySession) Mail(from string, opts smtp.MailOptions) error {
 	s.from = from
 	s.opts = opts
 	s.client = nil
-
-	log.Println("Mail from:", from)
 	return nil
 }
 
@@ -72,7 +69,6 @@ func (s *ProxySession) Rcpt(to string) error {
 		if err != nil {
 			return err // TODO convert to something like 'relay access denied'
 		}
-		log.Println("Using server: " + server)
 
 		c, err := smtp.Dial(server)
 		if err != nil {
@@ -83,13 +79,11 @@ func (s *ProxySession) Rcpt(to string) error {
 		hostname := ""
 		hostname, err = os.Hostname()
 		if err != nil {
-			log.Println(err)
+			log.Warn("Failed to get hostname. Using localhost", "error", err)
 			hostname = "localhost"
 		}
 
-		log.Println("Replay: HELO " + hostname)
 		if err := s.client.Hello(hostname); err != nil {
-			log.Println(err)
 			return err
 		}
 
@@ -112,13 +106,11 @@ func (s *ProxySession) Rcpt(to string) error {
 
 func (s *ProxySession) Data(r io.Reader) error {
 	if s.client == nil {
-		log.Println("SMTP client is unexpectedly nil")
 		return &smtp.SMTPError{Code: 500, EnhancedCode: smtp.EnhancedCode{5, 0, 0}, Message: "Invalid SMTP command order"}
 	}
 
 	w, err := s.client.Data()
 	if err != nil {
-		log.Println(err)
 		return err
 	}
 
@@ -130,25 +122,21 @@ func (s *ProxySession) Data(r io.Reader) error {
 		return err
 	}
 
-	log.Println("-----------")
-
 	return nil
 }
 
 func (s *ProxySession) Reset() {
-	log.Println("Reset")
 	if s.client == nil {
 		return
 	}
 
 	err := s.client.Reset() // TODO close client, may use new backend now?
 	if err != nil {
-		log.Println(err)
+		// FIXME log.Println(err)
 	}
 }
 
 func (s *ProxySession) Logout() error {
-	log.Println("Logout")
 	if s.client == nil {
 		return nil
 	}

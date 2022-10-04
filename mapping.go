@@ -5,7 +5,6 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 
@@ -56,7 +55,6 @@ func NewCSVServerMap(filename string) (*CSVServerMap, error) {
 
 		mx := fmt.Sprintf("%s:%s", host, port)
 		csvMap.servers[pattern] = mx
-		log.Println(pattern, " -> ", mx)
 	}
 
 	return csvMap, nil
@@ -91,20 +89,15 @@ func (m *MySQLServerMap) GetServer(pattern string) (string, error) {
 
 	res := m.db.QueryRow(m.query, pattern)
 
-	log.Println(m.query, pattern)
-
 	err := res.Scan(&host, &port, &ssl)
 	if err == sql.ErrNoRows {
-		log.Println("ErrNoRows")
 		return "", ErrNotFound
 	}
 	if err != nil {
-		log.Println("SQL error: ", err)
 		return "", err
 	}
 
 	server := fmt.Sprintf("%s:%d", host, port) // TODO use ssl field
-	log.Println("Server = ", server)
 
 	return server, nil
 }
