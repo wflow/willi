@@ -50,11 +50,10 @@ func (c *CSVMappingConfig) CreateMapping() (ServerMap, error) {
 type StaticMappingConfig struct {
 	server string
 	port   int
-	tls    string
 }
 
 func (c *StaticMappingConfig) CreateMapping() (ServerMap, error) {
-	return NewStaticServerMap(c.server, c.port, c.tls)
+	return NewStaticServerMap(c.server, c.port)
 }
 
 func loadConfigFile(configFile string) (Config, error) {
@@ -100,11 +99,10 @@ func loadConfigFile(configFile string) (Config, error) {
 		}
 		switch t {
 		case "static":
-			log.Info("Loaing static mapping", "key", key)
+			log.Info("Loading static mapping", "key", key)
 			config.mappingConfigs = append(config.mappingConfigs, &StaticMappingConfig{
 				server: mapping.Get("server").(string),
 				port:   int(mapping.Get("port").(int64)),
-				tls:    mapping.Get("tls").(string),
 			})
 		case "sql":
 			log.Info("Loading SQL mapping", "key", key)

@@ -12,13 +12,12 @@ import (
 )
 
 type ServerMap interface {
-	// GetServer returns ...
 	GetServer(pattern string) (string, error)
 }
 
 var ErrNotFound = errors.New("No host found for pattern")
 
-// pattern;host;port;ssl
+// pattern;host;port
 type CSVServerMap struct {
 	servers map[string]string
 }
@@ -51,10 +50,8 @@ func NewCSVServerMap(filename string) (*CSVServerMap, error) {
 		pattern := strings.TrimSpace(record[0])
 		host := strings.TrimSpace(record[1])
 		port := strings.TrimSpace(record[2])
-		//ssl := strings.TrimSpace(record[3])
 
-		mx := fmt.Sprintf("%s:%s", host, port)
-		csvMap.servers[pattern] = mx
+		csvMap.servers[pattern] = fmt.Sprintf("%s:%s", host, port)
 	}
 
 	return csvMap, nil
@@ -85,11 +82,10 @@ func NewMySQLServerMap(dsn string, query string) (*MySQLServerMap, error) {
 func (m *MySQLServerMap) GetServer(pattern string) (string, error) {
 	var host string
 	var port int
-	var ssl string
 
 	res := m.db.QueryRow(m.query, pattern)
 
-	err := res.Scan(&host, &port, &ssl)
+	err := res.Scan(&host, &port)
 	if err == sql.ErrNoRows {
 		return "", ErrNotFound
 	}
@@ -97,19 +93,16 @@ func (m *MySQLServerMap) GetServer(pattern string) (string, error) {
 		return "", err
 	}
 
-	server := fmt.Sprintf("%s:%d", host, port) // TODO use ssl field
-
-	return server, nil
+	return fmt.Sprintf("%s:%d", host, port), nil
 }
 
 type StaticServerMap struct {
 	server string
 	port   int
-	tls    string // TODO use
 }
 
-func NewStaticServerMap(server string, port int, tls string) (*StaticServerMap, error) {
-	return &StaticServerMap{server: server, port: port, tls: tls}, nil
+func NewStaticServerMap(server string, port int) (*StaticServerMap, error) {
+	return &StaticServerMap{server: server, port: port}, nil
 }
 
 func (m *StaticServerMap) GetServer(pattern string) (string, error) {
