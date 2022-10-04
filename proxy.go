@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"net"
 	"os"
 	"strings"
 
@@ -28,11 +29,22 @@ func (b *ProxyBackend) Login(_ *smtp.ConnectionState, username, password string)
 	return nil, smtp.ErrAuthUnsupported
 }
 
-func (b *ProxyBackend) AnonymousLogin(_ *smtp.ConnectionState) (smtp.Session, error) {
+func (b *ProxyBackend) AnonymousLogin(s *smtp.ConnectionState) (smtp.Session, error) {
 	// FIXME log TLS stuff
+
+	logger := log.New("session", randSeq(10))
+
+	logger.Debug("HELO/EHLO", "client_ip", s.RemoteAddr, "client_helo", s.Hostname)
+
 	return &LoggingSession{
-		delegate: &ProxySession{mappings: b.mappings},
-		log:      log.New("session", randSeq(10)),
+		log: logger,
+		delegate: &ProxySession{
+			log:      logger,
+			mappings: b.mappings,
+
+			clientHelo: s.Hostname,
+			clientAddr: s.RemoteAddr,
+		},
 	}, nil
 }
 
@@ -49,10 +61,16 @@ func randSeq(n int) string {
 
 // A ProxySession is returned after EHLO.
 type ProxySession struct {
-	from     string
-	opts     smtp.MailOptions
-	client   *smtp.Client
+	log      log.Logger
 	mappings []ServerMap
+
+	clientHelo string
+	clientAddr net.Addr
+
+	from   string
+	rcpt   []string
+	opts   smtp.MailOptions
+	client *smtp.Client // this is the client used to connect to the backend smtp server!
 }
 
 func (s *ProxySession) getServer(recipient string) (string, error) {
@@ -80,6 +98,7 @@ func (s *ProxySession) getServer(recipient string) (string, error) {
 
 func (s *ProxySession) Mail(from string, opts smtp.MailOptions) error {
 	s.from = from
+	s.rcpt = make([]string, 0)
 	s.opts = opts
 	s.client = nil
 	return nil
@@ -87,6 +106,8 @@ func (s *ProxySession) Mail(from string, opts smtp.MailOptions) error {
 
 func (s *ProxySession) Rcpt(to string) error {
 	if s.client == nil {
+		s.rcpt = append(s.rcpt, to)
+
 		server, err := s.getServer(to)
 		if err == ErrNotFound {
 			return ErrRelayAccessDenied
@@ -147,17 +168,30 @@ func (s *ProxySession) Data(r io.Reader) error {
 		return err
 	}
 
+	// Message is now queued by backend server
+
 	return nil
 }
 
-func (s *ProxySession) Reset() {
+func (s *ProxySession) Reset() { // called after each message DATA
 	if s.client == nil {
 		return
 	}
 
-	err := s.client.Reset() // TODO close client, may use new backend now?
-	if err != nil {
-		// FIXME log.Println(err)
+	// Log here?
+
+	// Restart from scratch (client = nil, require mail from, rcpt to, ...)
+	// s.message = ProxyMessage{}
+	s.client = nil
+	s.from = ""
+	s.rcpt = make([]string, 0)
+
+	if err := s.client.Quit(); err != nil {
+		log.Warn("Error during QUIT with backend. Closing connection anyway", "error", err)
+
+		if err = s.client.Close(); err != nil {
+			log.Warn("Error while closing connection with backend", "error", err)
+		}
 	}
 }
 
@@ -165,14 +199,16 @@ func (s *ProxySession) Logout() error {
 	if s.client == nil {
 		return nil
 	}
-	defer s.client.Close()
 
+	s.log.Info("Logout", "client_ip", s.clientAddr, "client_helo", s.clientHelo, "from", s.from, "to", s.rcpt)
+
+	defer s.client.Close()
 	return s.client.Quit()
 }
 
 type LoggingSession struct {
-	delegate smtp.Session
 	log      log.Logger
+	delegate *ProxySession
 }
 
 func (s *LoggingSession) Mail(from string, opts smtp.MailOptions) error {
@@ -190,9 +226,9 @@ func (s *LoggingSession) Rcpt(to string) error {
 }
 
 func (s *LoggingSession) Data(r io.Reader) error {
-	var err error
-	defer func() { s.logDebug(err, "DATA") }()
-	err = s.delegate.Data(r)
+	err := s.delegate.Data(r)
+
+	s.logDebug(err, "DATA")
 	return s.wrapError(err)
 }
 
@@ -202,14 +238,15 @@ func (s *LoggingSession) Reset() {
 }
 
 func (s *LoggingSession) Logout() error {
-	// TODO log canonical log line
+	err := s.delegate.Logout()
 
+	s.logDebug(err, "Logout")
+	smtpError := s.wrapError(err)
+
+	// TODO log canonical log line
 	// from= to= size= relay= status= (tls=)
 
-	var err error
-	defer func() { s.logDebug(err, "Logout") }()
-	err = s.delegate.Logout()
-	return s.wrapError(err)
+	return smtpError
 }
 
 func (s *LoggingSession) logDebug(err error, msg string, ctx ...interface{}) {
