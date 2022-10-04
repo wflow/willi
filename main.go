@@ -65,6 +65,7 @@ func main() {
 	}
 
 	be := &ProxyBackend{
+		domain:   config.domain,
 		mappings: mappings,
 	}
 
