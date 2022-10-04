@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"strings"
 
@@ -28,7 +29,22 @@ func (b *ProxyBackend) Login(_ *smtp.ConnectionState, username, password string)
 }
 
 func (b *ProxyBackend) AnonymousLogin(_ *smtp.ConnectionState) (smtp.Session, error) {
-	return &ProxySession{mappings: b.mappings}, nil
+	// FIXME log TLS stuff
+	return &LoggingSession{
+		delegate: &ProxySession{mappings: b.mappings},
+		log:      log.New("session", randSeq(10)),
+	}, nil
+}
+
+// https://stackoverflow.com/a/22892986 - because I'm lazy
+var letters = []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+
+func randSeq(n int) string {
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(b)
 }
 
 // A ProxySession is returned after EHLO.
@@ -152,4 +168,68 @@ func (s *ProxySession) Logout() error {
 	defer s.client.Close()
 
 	return s.client.Quit()
+}
+
+type LoggingSession struct {
+	delegate smtp.Session
+	log      log.Logger
+}
+
+func (s *LoggingSession) Mail(from string, opts smtp.MailOptions) error {
+	err := s.delegate.Mail(from, opts)
+
+	s.logDebug(err, "MAIL FROM", "from", from, "opts", opts)
+	return s.wrapError(err)
+}
+
+func (s *LoggingSession) Rcpt(to string) error {
+	err := s.delegate.Rcpt(to)
+
+	s.logDebug(err, "RCPT TO", "to", to)
+	return s.wrapError(err)
+}
+
+func (s *LoggingSession) Data(r io.Reader) error {
+	var err error
+	defer func() { s.logDebug(err, "DATA") }()
+	err = s.delegate.Data(r)
+	return s.wrapError(err)
+}
+
+func (s *LoggingSession) Reset() {
+	s.log.Debug("Reset")
+	s.delegate.Reset()
+}
+
+func (s *LoggingSession) Logout() error {
+	// TODO log canonical log line
+
+	// from= to= size= relay= status= (tls=)
+
+	var err error
+	defer func() { s.logDebug(err, "Logout") }()
+	err = s.delegate.Logout()
+	return s.wrapError(err)
+}
+
+func (s *LoggingSession) logDebug(err error, msg string, ctx ...interface{}) {
+	if err != nil {
+		ctx = append(ctx, "error", err)
+	}
+	s.log.Debug(msg, ctx...)
+}
+
+func (s *LoggingSession) wrapError(err error) error {
+	switch err.(type) {
+	case nil:
+		return nil
+	case *smtp.SMTPError:
+		return err
+	default:
+		return &smtp.SMTPError{
+			Code:         450,
+			EnhancedCode: smtp.NoEnhancedCode,
+			Message:      "Internal server error",
+		}
+	}
 }

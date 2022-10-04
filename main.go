@@ -4,7 +4,9 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"math/rand"
 	"os"
+	"time"
 
 	"github.com/emersion/go-smtp"
 	log "github.com/inconshreveable/log15"
@@ -18,6 +20,7 @@ var (
 )
 
 func main() {
+	rand.Seed(time.Now().UnixNano())
 
 	flag.Parse()
 
