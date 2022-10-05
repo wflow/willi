@@ -6,6 +6,7 @@ import (
 	"io"
 	"math/rand"
 	"net"
+	"net/textproto"
 	"strings"
 
 	log "github.com/inconshreveable/log15"
@@ -127,6 +128,31 @@ func (s *ProxySession) getServer(recipient string) (string, error) {
 	return "", ErrNotFound
 }
 
+func xclient(c *textproto.Conn, s *ProxySession) error {
+	clientIP := s.clientAddr.(*net.TCPAddr).IP
+
+	ipStr := clientIP.String()
+	if clientIP.To4() == nil {
+		ipStr = fmt.Sprintf("IPV6:%s", clientIP)
+	}
+
+	// FIXME HELO name must be encoded s according to RFC1891 "xtext" (only relevant for non-ascii chars)
+
+	id, err := c.Cmd(fmt.Sprintf("XCLIENT ADDR=%s HELO=%s", ipStr, s.clientHelo))
+	if err != nil {
+		return err
+	}
+
+	c.StartResponse(id)
+	defer c.EndResponse(id)
+
+	if _, _, err = c.ReadCodeLine(220); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (s *ProxySession) Mail(from string, opts smtp.MailOptions) error {
 	s.msg = buildProxyMessage(from, opts)
 	return nil
@@ -155,6 +181,12 @@ func (s *ProxySession) Rcpt(to string) error {
 
 		if err := s.msg.client.Hello(s.helo); err != nil {
 			return err
+		}
+
+		if ok, _ := s.msg.client.Extension("XCLIENT"); ok {
+			if err := xclient(s.msg.client.Text, s); err != nil {
+				return err
+			}
 		}
 
 		if ok, _ := s.msg.client.Extension("STARTTLS"); ok || !s.clientTls { // if client connection is plain, plain is ok
