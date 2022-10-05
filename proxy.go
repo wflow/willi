@@ -326,7 +326,7 @@ func (s *LoggingSession) getCanonicalLogLineCtx() []interface{} {
 
 	ctx := []interface{}{
 		"msg", msg.id,
-		"client_ip", session.clientAddr, "client_helo", session.clientHelo, "client_tls", session.clientTls,
+		"client_ip", s.formatIP(session.clientAddr), "client_helo", session.clientHelo, "client_tls", session.clientTls,
 		"from", msg.from, "to", strings.Join(msg.rcpts, ","),
 		"relay", msg.server, "relay_tls", msg.tls,
 	}
@@ -371,4 +371,12 @@ func (s *LoggingSession) formatError(err error) string {
 	default:
 		return err.Error()
 	}
+}
+
+func (s *LoggingSession) formatIP(addr net.Addr) string {
+	if tcpAddr, ok := addr.(*net.TCPAddr); ok {
+		return tcpAddr.IP.String()
+	}
+
+	return addr.String() // safety fallback, should never happen
 }
