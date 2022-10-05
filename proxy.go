@@ -134,6 +134,10 @@ func (s *ProxySession) lookupRecipient(mapping ServerMap, recipient string) (str
 		}
 	}
 
+	if err != nil && err != ErrNotFound {
+		return "", fmt.Errorf("lookup %T: %w", mapping, err)
+	}
+
 	return server, err
 }
 
