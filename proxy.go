@@ -113,25 +113,40 @@ func buildZeroProxyMessage() ProxyMessage {
 
 func (s *ProxySession) getServer(recipient string) (string, error) {
 	for _, mapping := range s.mappings {
-		server, err := mapping.GetServer(recipient)
-		if err == nil {
-			return server, nil
-		}
-
+		server, err := s.lookupRecipient(mapping, recipient)
 		if err == ErrNotFound {
-			parts := strings.Split(recipient, "@")
-			if len(parts) == 2 {
-				domain := parts[1]
-				return s.getServer(domain)
-			}
+			continue
 		}
 
-		if err != nil {
-			return "", err
-		}
+		return server, err
 	}
 
 	return "", ErrNotFound
+}
+
+func (s *ProxySession) lookupRecipient(mapping ServerMap, recipient string) (string, error) {
+	server, err := s.lookupKey(mapping, recipient)
+	if err == ErrNotFound {
+		parts := strings.Split(recipient, "@")
+		if len(parts) == 2 {
+			domain := parts[1]
+			server, err = s.lookupKey(mapping, domain)
+		}
+	}
+
+	return server, err
+}
+
+func (s *ProxySession) lookupKey(mapping ServerMap, key string) (string, error) {
+	server, err := mapping.GetServer(key)
+	if err == nil {
+		s.log.Debug("Lookup match", "mapping", fmt.Sprintf("%T", mapping), "key", key, "result", server)
+	}
+	if err == ErrNotFound {
+		s.log.Debug("Lookup miss", "mapping", fmt.Sprintf("%T", mapping), "key", key)
+	}
+
+	return server, err
 }
 
 func xclient(c *textproto.Conn, s *ProxySession) error {
@@ -177,7 +192,6 @@ func (s *ProxySession) Rcpt(to string) error {
 		}
 
 		s.msg.server = server
-		s.log.Debug("Using backend", "relay", server)
 
 		c, err := smtp.Dial(s.msg.server)
 		if err != nil {
