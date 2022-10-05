@@ -1,30 +1,57 @@
 [server]
+# IP/port to listen on. E.g. ":25", "127.0.0.1:25", "[::1]:25"
 listen = ":25"
+
+# Domain used in SMTP banner and in EHLO when talking to upstream server.
 domain = "mail.example.com"
 
+# Client timeouts
 read_timeout = "10s"
 write_timeout = "10s"
+
+# Message limits
 max_message_bytes = "20mib"
 max_recipients = "50"
 
+# Uncomment the following to enable STARTTLS support
 #tls_cert = "/opt/smtp-proxy/etc/smtp-proxy/server.crt"
 #tls_key = "/opt/smtp-proxy/smtp-proxy/server.key"
 
+# Mappings define which upstream SMTP server should be used to proxy the SMTP session to.
+# The server is selected based on the first "RCPT TO" header that the client sends.
+#
+# The config file can have many [mappings.*] sections. Each section must contain a
+# "type = <sql|csv|static>" key and other keys depending on the type.
+#
+# The [mappings.*] sections are evaluated in order of appearence.
+# For each mapping, the following two lookups are done:
+#
+# RCPT TO: <user@domain.com>
+#
+# 1. lookup: user@domain.com (full recipient)
+# 2. lookup: domain.com (domain only - not used if recipient does not contain domain)
+#
+# The first lookup that yields a result is used.
+#
+# If no mapping matches, the mail is rejected permanently (550).
+
 #[mappings.firstsql]
 #type = "sql"
-#connection="root:password@tcp(:3306)/smtp-proxy"
+# Connection is in DSN form (see https://github.com/go-sql-driver/mysql#dsn-data-source-name)
+#connection="root:password@tcp(mysqlserver:3306)/proxydb"
 #query="SELECT host, port FROM upstream_servers WHERE key = ?"
 
 #[mappings.secondsql]
 #type = "sql"
-#connection="user:pass@tcp(otherserver:3306)/smtp-proxy-fallback"
-#query="SELECT host, port FROM upstream_servers WHERE key = ?"
+#connection="user:pass@tcp(otherserver:3306)/proxydb-fallback"
+#query="SELECT host, port FROM servers WHERE key = ?"
 
 #[mappings.csv]
 #type = "csv"
 #file = "/opt/smtp-proxy/upstream_servers.csv"
 
-#[mappings.static]
+# Static mapping always matches. It should be the last entry.
+#[mappings.fallback]
 #type = "static"
 #server = "mail.example.org"
 #port = 25
