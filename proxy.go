@@ -20,6 +20,12 @@ var ErrRelayAccessDenied = &smtp.SMTPError{
 	Message:      "Relay access denied",
 }
 
+var ErrInternal = &smtp.SMTPError{
+	Code:         450,
+	EnhancedCode: smtp.NoEnhancedCode,
+	Message:      "Internal server error. Please try again later.",
+}
+
 // The ProxyBackend implements SMTP server methods.
 type ProxyBackend struct {
 	domain   string
@@ -348,11 +354,7 @@ func (s *LoggingSession) wrapError(err error) error {
 	case *smtp.SMTPError:
 		return err
 	default:
-		return &smtp.SMTPError{
-			Code:         450,
-			EnhancedCode: smtp.NoEnhancedCode,
-			Message:      "Internal server error",
-		}
+		return ErrInternal
 	}
 }
 
