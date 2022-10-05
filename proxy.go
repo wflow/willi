@@ -37,7 +37,7 @@ func (b *ProxyBackend) Login(_ *smtp.ConnectionState, username, password string)
 }
 
 func (b *ProxyBackend) AnonymousLogin(s *smtp.ConnectionState) (smtp.Session, error) {
-	logger := log.New("session", randSeq(10))
+	logger := log.New("sid", randSeq(10))
 
 	logger.Debug("TLS", "connection_state", s)
 	logger.Debug("HELO/EHLO", "client_ip", s.RemoteAddr, "client_helo", s.Hostname, "tls", s.TLS.HandshakeComplete)
@@ -86,8 +86,6 @@ type ProxySession struct {
 
 // ProxyMessage encapsulates one message transaction (MAIL FROM, RCPT TO*, DATA)
 type ProxyMessage struct {
-	id string
-
 	from   string
 	rcpts  []string
 	server string
@@ -99,7 +97,6 @@ type ProxyMessage struct {
 
 func buildProxyMessage(from string, opts smtp.MailOptions) ProxyMessage {
 	return ProxyMessage{
-		id:    randSeq(10),
 		from:  from,
 		rcpts: make([]string, 0),
 
@@ -343,7 +340,6 @@ func (s *LoggingSession) getCanonicalLogLineCtx() []interface{} {
 	msg := session.msg
 
 	ctx := []interface{}{
-		"msg", msg.id,
 		"client_ip", s.formatIP(session.clientAddr), "client_helo", session.clientHelo, "client_tls", session.clientTls,
 		"from", msg.from, "to", strings.Join(msg.rcpts, ","),
 		"relay", msg.server, "relay_tls", msg.tls,
