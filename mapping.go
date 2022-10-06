@@ -81,11 +81,10 @@ func NewMySQLServerMap(dsn string, query string) (*MySQLServerMap, error) {
 
 func (m *MySQLServerMap) GetServer(pattern string) (string, error) {
 	var host string
-	var port int
 
 	res := m.db.QueryRow(m.query, pattern)
 
-	err := res.Scan(&host, &port)
+	err := res.Scan(&host)
 	if err == sql.ErrNoRows {
 		return "", ErrNotFound
 	}
@@ -93,7 +92,11 @@ func (m *MySQLServerMap) GetServer(pattern string) (string, error) {
 		return "", err
 	}
 
-	return fmt.Sprintf("%s:%d", host, port), nil
+	if strings.Contains(host, ":") {
+		return host, nil
+	}
+
+	return fmt.Sprintf("%s:25", host), nil
 }
 
 type StaticServerMap struct {
