@@ -3,190 +3,192 @@ package main
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"time"
 
 	units "github.com/docker/go-units"
+	"github.com/hjson/hjson-go/v4"
 	log "github.com/inconshreveable/log15"
-	toml "github.com/pelletier/go-toml"
 )
 
+type Duration time.Duration
+type ByteSize int
+type LogLvl log.Lvl
+
 type Config struct {
-	listen string
-	domain string
+	LogLevel LogLvl
+	Listen   string
+	Domain   string
 
-	tlsCert string
-	tlsKey  string
+	TlsCert string `json:"tls_cert"`
+	TlsKey  string `json:"tls_key"`
 
-	readTimeout        time.Duration
-	writeTimeout       time.Duration
-	maxMessageBytes    int
-	maxRecipients      int
-	recipientDelimiter string
+	ReadTimeout        Duration `json:"read_timeout"`
+	WriteTimeout       Duration `json:"write_timeout"`
+	MaxMessageBytes    ByteSize `json:"max_message_bytes"`
+	MaxRecipients      int      `json:"max_recipients"`
+	RecipientDelimiter string   `json:"recipient_delimiter"`
 
-	mappingConfigs []MappingConfig
+	Mappings []Mapping `json:"-"`
 }
 
-type MappingConfig interface {
-	CreateMapping() (ServerMap, error)
+func (l *LogLvl) UnmarshalText(b []byte) error {
+	x, err := log.LvlFromString(string(b))
+	if err != nil {
+		return err
+	}
+	*l = LogLvl(x)
+	return nil
 }
 
-type MySQLMappingConfig struct {
-	connection string
-	query      string
+func (d *Duration) UnmarshalText(b []byte) error {
+	x, err := time.ParseDuration(string(b))
+	if err != nil {
+		return err
+	}
+	*d = Duration(x)
+	return nil
 }
 
-func (c *MySQLMappingConfig) CreateMapping() (ServerMap, error) {
-	return NewMySQLServerMap(c.connection, c.query)
+func (s *ByteSize) UnmarshalText(b []byte) error {
+	x, err := units.FromHumanSize(string(b))
+	if err != nil {
+		return err
+	}
+	*s = ByteSize(x)
+	return nil
 }
 
-type CSVMappingConfig struct {
-	file string
-}
-
-func (c *CSVMappingConfig) CreateMapping() (ServerMap, error) {
-	return NewCSVServerMap(c.file)
-}
-
-type StaticMappingConfig struct {
-	server string
-	port   int
-}
-
-func (c *StaticMappingConfig) CreateMapping() (ServerMap, error) {
-	return NewStaticServerMap(c.server, c.port)
-}
-
-func loadConfigFile(configFile string) (Config, error) {
-	if _, err := os.Stat(configFile); err != nil {
-		return Config{}, err
+func parseMappings(mappings []interface{}) ([]Mapping, error) {
+	list := make([]Mapping, 0)
+	for _, m := range mappings {
+		v, ok := m.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("mappings: must contain {...} elements but has %T", m)
+		}
+		mapping, err := parseMapping(v)
+		if err != nil {
+			return nil, err
+		}
+		list = append(list, mapping)
 	}
 
-	tomlConfig, err := toml.LoadFile(configFile)
+	return list, nil
+}
+
+func parseMapping(mapping map[string]interface{}) (Mapping, error) {
+	t, ok := mapping["type"]
+	if !ok {
+		return nil, fmt.Errorf("missing 'type:' field")
+	}
+
+	mappingType, ok := t.(string)
+	if !ok {
+		return nil, fmt.Errorf("'type:' must be a string but was %T", t)
+	}
+
+	switch mappingType {
+	case "static":
+		return parseStaticMapping(mapping)
+	case "csv":
+		return parseCSVMapping(mapping)
+	case "sql":
+		return parseSQLMapping(mapping)
+	default:
+		return nil, fmt.Errorf("'type:' must be one of 'static', 'csv', 'sql' but was '%s'", mappingType)
+	}
+}
+
+func parseStaticMapping(mapping map[string]interface{}) (Mapping, error) {
+	s, ok := mapping["server"]
+	if !ok {
+		return nil, fmt.Errorf("static mapping: missing 'server:'")
+	}
+
+	server, ok := s.(string)
+	if !ok {
+		return nil, fmt.Errorf("static mapping: 'server:' must be a string but was %T", s)
+	}
+
+	return NewStaticMapping(server)
+}
+
+func parseCSVMapping(mapping map[string]interface{}) (Mapping, error) {
+	f, ok := mapping["file"]
+	if !ok {
+		return nil, fmt.Errorf("csv mapping: missing 'file:'")
+	}
+
+	file, ok := f.(string)
+	if !ok {
+		return nil, fmt.Errorf("csv mapping: 'file:' must be a string but was %T", f)
+	}
+
+	return NewCSVMapping(file)
+}
+
+func parseSQLMapping(mapping map[string]interface{}) (Mapping, error) {
+	c, ok := mapping["connection"]
+	if !ok {
+		return nil, fmt.Errorf("sql mapping: missing 'connection:'")
+	}
+
+	connection, ok := c.(string)
+	if !ok {
+		return nil, fmt.Errorf("sql mapping: 'connection:' must be a string but was %T", c)
+	}
+
+	q, ok := mapping["query"]
+	if !ok {
+		return nil, fmt.Errorf("sql mapping: missing 'query:'")
+	}
+
+	query, ok := q.(string)
+	if !ok {
+		return nil, fmt.Errorf("sql mapping: 'query:' must be a string but was %T", q)
+	}
+
+	return NewSQLMapping("mysql", connection, query)
+}
+
+func loadConfigFile(configFile string) (*Config, error) {
+	d, err := os.ReadFile(configFile)
 	if err != nil {
-		return Config{}, err
+		return nil, err
 	}
 
 	config := Config{
-		listen: getConfigValue(tomlConfig, "server.listen"),
-		domain: getConfigValueDefault(tomlConfig, "server.domain", getDefaultHostname()),
+		LogLevel: LogLvl(log.LvlInfo),
 
-		tlsCert: getConfigValueDefault(tomlConfig, "server.tls_cert", ""),
-		tlsKey:  getConfigValueDefault(tomlConfig, "server.tls_key", ""),
+		Listen: ":25",
+		Domain: getDefaultHostname(),
 
-		readTimeout:     parseDuration(getConfigValueDefault(tomlConfig, "server.read_timeout", "10s")),
-		writeTimeout:    parseDuration(getConfigValueDefault(tomlConfig, "server.write_timeout", "10s")),
-		maxMessageBytes: parseSize(getConfigValueDefault(tomlConfig, "server.max_message_bytes", "20mb")),
-		maxRecipients:   parseInt(getConfigValueDefault(tomlConfig, "server.max_recipients", "50")),
+		ReadTimeout:     Duration(10 * time.Second),
+		WriteTimeout:    Duration(10 * time.Second),
+		MaxMessageBytes: 20 * units.MiB,
+		MaxRecipients:   50,
 
-		recipientDelimiter: getConfigValueDefault(tomlConfig, "server.recipient_delimiter", ""),
-
-		mappingConfigs: make([]MappingConfig, 0),
+		Mappings: make([]Mapping, 0),
+	}
+	if err := hjson.Unmarshal(d, &config); err != nil {
+		return nil, err
 	}
 
-	x := tomlConfig.Get("mappings")
-	mappings, ok := x.(*toml.Tree)
-	if !ok {
-		return Config{}, fmt.Errorf("Config file must define at least one [mappings.XXX] section")
+	var configMap map[string]interface{}
+	if err := hjson.Unmarshal(d, &configMap); err != nil {
+		return nil, err
+	}
+	if config.Mappings, err = parseMappings(configMap["mappings"].([]interface{})); err != nil {
+		return nil, err
 	}
 
-	for _, key := range mappings.Keys() {
-		mapping, ok := mappings.Get(key).(*toml.Tree)
-		if !ok {
-			return Config{}, fmt.Errorf("Not a mapping section: %s", key)
-		}
-
-		t, ok := mapping.Get("type").(string)
-		if !ok {
-			return Config{}, fmt.Errorf("Section [mappings.%s] must contain type=", key)
-		}
-		switch t {
-		case "static":
-			log.Info("Loading static mapping", "key", key)
-			config.mappingConfigs = append(config.mappingConfigs, &StaticMappingConfig{
-				server: mapping.Get("server").(string),
-				port:   int(mapping.Get("port").(int64)),
-			})
-		case "sql":
-			log.Info("Loading SQL mapping", "key", key)
-			config.mappingConfigs = append(config.mappingConfigs, &MySQLMappingConfig{
-				connection: mapping.Get("connection").(string),
-				query:      mapping.Get("query").(string),
-			})
-		case "csv":
-			log.Info("Loading CSV mapping", "key", key)
-			config.mappingConfigs = append(config.mappingConfigs, &CSVMappingConfig{
-				file: mapping.Get("file").(string),
-			})
-		default:
-			return Config{}, fmt.Errorf("Config file: Unknown mapping type: %s", t)
-		}
-	}
-
-	return config, nil
+	return &config, nil
 }
 
 func getDefaultHostname() string {
 	hostname, err := os.Hostname()
 	if err != nil {
-		log.Warn("Failed to get default hostname", "error", err)
 		hostname = "localhost"
 	}
 
 	return hostname
-}
-
-func getConfigValueDefault(config *toml.Tree, key string, defaultVal string) string {
-	val := config.Get(key)
-	if val == nil {
-		return defaultVal
-	}
-
-	return val.(string)
-}
-
-func getConfigValue(config *toml.Tree, key string) string {
-	val := config.Get(key)
-	if val == nil {
-		log.Error("Invalid configuration file: Mandatory key is missing", "key", key)
-		os.Exit(1)
-	}
-
-	return val.(string)
-}
-
-func getBoolConfigValueDefault(config *toml.Tree, key string, defaultVal bool) bool {
-	defaultStringValue := "no"
-	if defaultVal {
-		defaultStringValue = "yes"
-	}
-
-	return getConfigValueDefault(config, key, defaultStringValue) == "yes"
-}
-
-func parseDuration(valStr string) time.Duration {
-	val, err := time.ParseDuration(valStr)
-	if err != nil {
-		log.Error("Invalid configuration file: Invalid duration", "value", valStr, "error", err)
-		os.Exit(1)
-	}
-	return val
-}
-
-func parseSize(valStr string) int {
-	val, err := units.FromHumanSize(valStr)
-	if err != nil {
-		log.Error("Invalid configuration file: Invalid size", "value", valStr, "error", err)
-		os.Exit(1)
-	}
-	return int(val) // safe enough. If you want to process mails with > 2GB, you're in trouble anyway
-}
-
-func parseInt(valStr string) int {
-	val, err := strconv.Atoi(valStr)
-	if err != nil {
-		log.Error("Invalid configuration file: Not a numerical value", "value", valStr, "error", err)
-		os.Exit(1)
-	}
-	return val
 }

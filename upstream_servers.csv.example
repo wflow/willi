@@ -1,3 +1,6 @@
-key;host;port
-somedomain.com;mail.somedomain.com;25
-user@somedomain.com;mail.other.org;25
+pattern;server
+somedomain.com;mail.somedomain.com
+user@somedomain.com;mail.other.org:25
+otherdomain.net;mail.other.org:5025
+
+# Comments and emtpy lines are ignored

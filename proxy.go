@@ -29,7 +29,7 @@ var ErrInternal = &smtp.SMTPError{
 // The ProxyBackend implements SMTP server methods.
 type ProxyBackend struct {
 	domain   string
-	mappings []ServerMap
+	mappings []Mapping
 
 	recipientDelimiter string
 }
@@ -77,7 +77,7 @@ func randSeq(n int) string {
 // A ProxySession is returned after EHLO.
 type ProxySession struct {
 	log      log.Logger
-	mappings []ServerMap
+	mappings []Mapping
 
 	recipientDelimiter string
 
@@ -117,23 +117,23 @@ func buildZeroProxyMessage() ProxyMessage {
 func (s *ProxySession) getServer(recipient string) (string, error) {
 	for _, mapping := range s.mappings {
 		server, err := s.lookupRecipient(mapping, recipient)
-		if err == ErrNotFound {
+		if err == ErrNoServerFound {
 			continue
 		}
 
 		return server, err
 	}
 
-	return "", ErrNotFound
+	return "", ErrNoServerFound
 }
 
-func (s *ProxySession) lookupRecipient(mapping ServerMap, recipient string) (string, error) {
+func (s *ProxySession) lookupRecipient(mapping Mapping, recipient string) (string, error) {
 	if s.recipientDelimiter != "" {
 		recipient = removeSuffix(recipient, s.recipientDelimiter)
 	}
 
 	server, err := s.lookupKey(mapping, recipient)
-	if err == ErrNotFound {
+	if err == ErrNoServerFound {
 		parts := strings.Split(recipient, "@")
 		if len(parts) == 2 {
 			domain := parts[1]
@@ -141,19 +141,23 @@ func (s *ProxySession) lookupRecipient(mapping ServerMap, recipient string) (str
 		}
 	}
 
-	if err != nil && err != ErrNotFound {
+	if err != nil && err != ErrNoServerFound {
 		return "", fmt.Errorf("lookup %T: %w", mapping, err)
 	}
 
-	return server, err
+	if strings.Contains(server, ":") {
+		return server, err
+	}
+
+	return fmt.Sprintf("%s:25", server), err
 }
 
-func (s *ProxySession) lookupKey(mapping ServerMap, key string) (string, error) {
+func (s *ProxySession) lookupKey(mapping Mapping, key string) (string, error) {
 	server, err := mapping.GetServer(key)
 	if err == nil {
 		s.log.Debug("Lookup match", "mapping", fmt.Sprintf("%T", mapping), "key", key, "result", server)
 	}
-	if err == ErrNotFound {
+	if err == ErrNoServerFound {
 		s.log.Debug("Lookup miss", "mapping", fmt.Sprintf("%T", mapping), "key", key)
 	}
 
@@ -212,7 +216,7 @@ func (s *ProxySession) Rcpt(to string) error {
 
 	if s.msg.client == nil {
 		server, err := s.getServer(to)
-		if err == ErrNotFound {
+		if err == ErrNoServerFound {
 			return ErrRelayAccessDenied
 		}
 		if err != nil {

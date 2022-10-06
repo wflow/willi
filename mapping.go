@@ -6,34 +6,56 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
 )
 
-type ServerMap interface {
+var ErrNoServerFound = errors.New("No server found for pattern")
+
+type Mapping interface {
 	GetServer(pattern string) (string, error)
 }
 
-var ErrNotFound = errors.New("No host found for pattern")
+type staticMapping struct {
+	server string
+}
 
-// pattern;host;port
-type CSVServerMap struct {
+func NewStaticMapping(server string) (Mapping, error) {
+	r := regexp.MustCompile("^[a-zA-Z0-9-.]+:[0-9]+$")
+	if !r.MatchString(server) {
+		return nil, fmt.Errorf("server must be in format <hostname>:<port>")
+	}
+
+	return &staticMapping{server: server}, nil
+}
+
+func (m *staticMapping) GetServer(pattern string) (string, error) {
+	return fmt.Sprintf("%s", m.server), nil
+}
+
+func (m *staticMapping) String() string {
+	return fmt.Sprintf("{static, %s}", m.server)
+}
+
+type csvMapping struct {
 	servers map[string]string
 }
 
-func NewCSVServerMap(filename string) (*CSVServerMap, error) {
+func NewCSVMapping(filename string) (Mapping, error) {
 	f, err := os.Open(filename)
 	if err != nil {
 		return nil, err
 	}
 
-	csvMap := &CSVServerMap{
-		servers: make(map[string]string, 128),
+	mapping := &csvMapping{
+		servers: make(map[string]string, 0),
 	}
 
 	r := csv.NewReader(f)
 	r.Comma = ';'
+	r.Comment = '#'
 
 	// skip first line (column headers)
 	if _, err := r.Read(); err != nil {
@@ -48,66 +70,65 @@ func NewCSVServerMap(filename string) (*CSVServerMap, error) {
 
 	for _, record := range records {
 		pattern := strings.TrimSpace(record[0])
-		host := strings.TrimSpace(record[1])
-		port := strings.TrimSpace(record[2])
+		server := strings.TrimSpace(record[1])
 
-		csvMap.servers[pattern] = fmt.Sprintf("%s:%s", host, port)
+		mapping.servers[pattern] = server
 	}
 
-	return csvMap, nil
+	return mapping, nil
 }
 
-func (m *CSVServerMap) GetServer(pattern string) (string, error) {
+func (m *csvMapping) GetServer(pattern string) (string, error) {
 	if server, ok := m.servers[pattern]; ok {
 		return server, nil
 	}
 
-	return "", ErrNotFound
+	return "", ErrNoServerFound
 }
 
-type MySQLServerMap struct {
-	db    *sql.DB
-	query string
+func (m *csvMapping) String() string {
+	return fmt.Sprintf("{csv, %d entries}", len(m.servers))
 }
 
-func NewMySQLServerMap(dsn string, query string) (*MySQLServerMap, error) {
-	db, err := sql.Open("mysql", dsn)
+type sqlMapping struct {
+	driverName  string
+	redactedDsn string
+	query       string
+
+	db *sql.DB
+}
+
+func NewSQLMapping(driverName string, dsn string, query string) (Mapping, error) {
+	db, err := sql.Open(driverName, dsn)
 	if err != nil {
 		return nil, err
 	}
 
-	return &MySQLServerMap{db, query}, nil
+	r := regexp.MustCompile("^(.+):(.+)@(.+)$")
+	m := r.FindStringSubmatch(dsn)
+	if len(m) == 4 {
+		dsn = fmt.Sprintf("%s:<redacted>@%s", m[1], m[3])
+	}
+
+	return &sqlMapping{driverName, dsn, query, db}, nil
 }
 
-func (m *MySQLServerMap) GetServer(pattern string) (string, error) {
-	var host string
+func (m *sqlMapping) GetServer(pattern string) (string, error) {
+	var server string
 
 	res := m.db.QueryRow(m.query, pattern)
 
-	err := res.Scan(&host)
+	err := res.Scan(&server)
 	if err == sql.ErrNoRows {
-		return "", ErrNotFound
+		return "", ErrNoServerFound
 	}
 	if err != nil {
 		return "", err
 	}
 
-	if strings.Contains(host, ":") {
-		return host, nil
-	}
-
-	return fmt.Sprintf("%s:25", host), nil
+	return server, nil
 }
 
-type StaticServerMap struct {
-	server string
-	port   int
-}
-
-func NewStaticServerMap(server string, port int) (*StaticServerMap, error) {
-	return &StaticServerMap{server: server, port: port}, nil
-}
-
-func (m *StaticServerMap) GetServer(pattern string) (string, error) {
-	return fmt.Sprintf("%s:%d", m.server, m.port), nil
+func (m *sqlMapping) String() string {
+	return fmt.Sprintf("{%s, %s, '%s'}", m.driverName, m.redactedDsn, m.query)
 }

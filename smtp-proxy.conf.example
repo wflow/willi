@@ -1,33 +1,44 @@
-[server]
+# Example config file for smtp-proxy.
+#
+# All values are optional unless noted otherwise. Default values are shown.
+
+# Log level: debug, info, warn, error
+#loglevel: info
+
 # IP/port to listen on. E.g. ":25", "127.0.0.1:25", "[::1]:25"
-listen = ":25"
+#listen: ":25"
 
 # Domain used in SMTP banner and in EHLO when talking to upstream server.
-domain = "mail.example.com"
+# If not set, the system hostname is used
+#domain:
 
 # Client timeouts
-read_timeout = "10s"
-write_timeout = "10s"
+#read_timeout: 10s
+#write_timeout: 10s
 
 # Message limits
-max_message_bytes = "20mib"
-max_recipients = "50"
+#max_message_bytes: 20mib
+#max_recipients: 50
 
-# Enable this for special handling of recipients like foo+bar@example.com
-# During lookups, "+bar" will be removed, so foo+bar@example.com becomes "foo@example.com"
-#recipient_delimiter = "+"
+# Enable this for special handling of recipients like foo+bar@example.com.
+# Mapping lookups will be made for 'foo@example.com' instead of 'foo+bar@example.com'.
+# Default value is <empty> (no special handling)
+#recipient_delimiter: +
 
-# Uncomment the following to enable STARTTLS support
-#tls_cert = "/opt/smtp-proxy/etc/smtp-proxy/server.crt"
-#tls_key = "/opt/smtp-proxy/smtp-proxy/server.key"
+# Uncomment the following to enable STARTTLS support.
+# Default values are <empty> (no STARTLS support)
+#tls_cert: /some/where.crt
+#tls_key: /some/where.key
 
-# Mappings define which upstream SMTP server should be used to proxy the SMTP session to.
-# The server is selected based on the first "RCPT TO" header that the client sends.
+# Mappings define which upstream SMTP server should be used to proxy
+# the SMTP session to.
+# The server is selected based on the first "RCPT TO" header that
+# the client sends.
 #
-# The config file can have many [mappings.*] sections. Each section must contain a
-# "type = <sql|csv|static>" key and other keys depending on the type.
+# The config file can have many mappings. Each mapping must contain
+# a 'type: <static|csv|sql>' key and other keys depending on the type.
 #
-# The [mappings.*] sections are evaluated in order of appearence.
+# The mappings are evaluated in order of appearence.
 # For each mapping, the following two lookups are done:
 #
 # RCPT TO: <user@domain.com>
@@ -38,24 +49,43 @@ max_recipients = "50"
 # The first lookup that yields a result is used.
 #
 # If no mapping matches, the mail is rejected permanently (550).
+# If a mapping lookup in the chain fails with an error, the whole message is temporarily
+# rejected (450). No other mappings are tried.
+#
+# All mappings must return a server in the form <hostname>[:port].
+# If no port is returned, port 25 is used.
+mappings: [
+    {
+        # Lookup server in a SQL database. Only MySQL is supported at the moment.
+        type: sql
 
-#[mappings.firstsql]
-#type = "sql"
-# Connection is in DSN form (see https://github.com/go-sql-driver/mysql#dsn-data-source-name)
-#connection="root:password@tcp(mysqlserver:3306)/proxydb"
-#query="SELECT host, port FROM upstream_servers WHERE key = ?"
+        # Connection is in DSN form (see https://github.com/go-sql-driver/mysql#dsn-data-source-name)
+        connection: root:password@tcp(mysqlserver:3306)/mail?tls=true
 
-#[mappings.secondsql]
-#type = "sql"
-#connection="user:pass@tcp(otherserver:3306)/proxydb-fallback"
-#query="SELECT host, port FROM servers WHERE key = ?"
+        # SQL SELECT statement with one parameter ('?') that returns a single column.
+        # If multiple rows are returned, only the first one will be used.
+        query: SELECT server FROM mx_external_servers WHERE pattern = ?
+    },
+    {
+        # Lookup server in a CSV file.
+        type: csv
+        
+        # CSV file for lookups. Must contain a header line and be in the following format:
+        #
+        # pattern;server
+        # foo@bar.com;mail.bar.com:25
+        # baz.org;smtp.foo.com
+        #
+        # Empty lines and lines starting with '#' are ignored
+        file: mapping.csv
+    },
+    {
+        # Static lookup. Always returns the given server.
+        type: static
 
-#[mappings.csv]
-#type = "csv"
-#file = "/opt/smtp-proxy/upstream_servers.csv"
-
-# Static mapping always matches. It should be the last entry.
-#[mappings.fallback]
-#type = "static"
-#server = "mail.example.org"
-#port = 25
+        # This server will be returned for any lookup.
+        #
+        # Place a static mapping last in the config file to define a default upstream server.
+        server: external:5025
+    }
+]

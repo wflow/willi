@@ -15,7 +15,6 @@ import (
 var (
 	configFileFlag = flag.String("c", "config.conf", "Path to configuration file")
 	versionFlag    = flag.Bool("V", false, "Print version and exit")
-	verboseFlag    = flag.Bool("v", false, "Verbose output")
 	version        = "undefined" // updated during release build
 )
 
@@ -29,23 +28,24 @@ func main() {
 		os.Exit(0)
 	}
 
-	logLevel := log.LvlInfo
-	if *verboseFlag {
-		logLevel = log.LvlDebug
-	}
-	log.Root().SetHandler(log.LvlFilterHandler(logLevel, log.StreamHandler(os.Stdout, LogfmtFormatWithoutTimestamp())))
-
-	log.Info("Loading config file", "config", *configFileFlag)
+	fmt.Fprintf(os.Stderr, "Loading config file %s\n", *configFileFlag)
 	config, err := loadConfigFile(*configFileFlag)
 	if err != nil {
-		log.Error("Failed to load config file", "error", err)
+		fmt.Fprintf(os.Stderr, "Failed to load config file %s: %v\n", *configFileFlag, err)
 		os.Exit(1)
 	}
 
-	var tlsConfig *tls.Config
-	if config.tlsCert != "" && config.tlsKey != "" {
+	log.Root().SetHandler(
+		log.LvlFilterHandler(log.Lvl(config.LogLevel),
+			log.StreamHandler(os.Stdout, LogfmtFormatWithoutTimestamp())))
 
-		cer, err := tls.LoadX509KeyPair(config.tlsCert, config.tlsKey)
+	for _, mapping := range config.Mappings {
+		log.Info("Using mapping", "mapping", mapping)
+	}
+
+	var tlsConfig *tls.Config
+	if config.TlsCert != "" && config.TlsKey != "" {
+		cer, err := tls.LoadX509KeyPair(config.TlsCert, config.TlsKey)
 		if err != nil {
 			log.Error("Failed to load TLS key/cert", "error", err)
 			os.Exit(1)
@@ -54,31 +54,21 @@ func main() {
 		tlsConfig = &tls.Config{Certificates: []tls.Certificate{cer}}
 	}
 
-	mappings := make([]ServerMap, 0)
-	for _, mappingConfig := range config.mappingConfigs {
-		mapping, err := mappingConfig.CreateMapping()
-		if err != nil {
-			log.Error("Failed to create mapping", "error", err)
-			os.Exit(1)
-		}
-		mappings = append(mappings, mapping)
-	}
-
 	be := &ProxyBackend{
-		domain:   config.domain,
-		mappings: mappings,
+		domain:   config.Domain,
+		mappings: config.Mappings,
 
-		recipientDelimiter: config.recipientDelimiter,
+		recipientDelimiter: config.RecipientDelimiter,
 	}
 
 	s := smtp.NewServer(be)
 
-	s.Addr = config.listen
-	s.Domain = config.domain
-	s.ReadTimeout = config.readTimeout
-	s.WriteTimeout = config.writeTimeout
-	s.MaxMessageBytes = config.maxMessageBytes
-	s.MaxRecipients = config.maxRecipients
+	s.Addr = config.Listen
+	s.Domain = config.Domain
+	s.ReadTimeout = time.Duration(config.ReadTimeout)
+	s.WriteTimeout = time.Duration(config.WriteTimeout)
+	s.MaxMessageBytes = int(config.MaxMessageBytes)
+	s.MaxRecipients = config.MaxRecipients
 	s.AuthDisabled = true
 	s.TLSConfig = tlsConfig
 
