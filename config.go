@@ -18,10 +18,11 @@ type Config struct {
 	tlsCert string
 	tlsKey  string
 
-	readTimeout     time.Duration
-	writeTimeout    time.Duration
-	maxMessageBytes int
-	maxRecipients   int
+	readTimeout        time.Duration
+	writeTimeout       time.Duration
+	maxMessageBytes    int
+	maxRecipients      int
+	recipientDelimiter string
 
 	mappingConfigs []MappingConfig
 }
@@ -77,6 +78,8 @@ func loadConfigFile(configFile string) (Config, error) {
 		writeTimeout:    parseDuration(getConfigValueDefault(tomlConfig, "server.write_timeout", "10s")),
 		maxMessageBytes: parseSize(getConfigValueDefault(tomlConfig, "server.max_message_bytes", "20mb")),
 		maxRecipients:   parseInt(getConfigValueDefault(tomlConfig, "server.max_recipients", "50")),
+
+		recipientDelimiter: getConfigValueDefault(tomlConfig, "server.recipient_delimiter", ""),
 
 		mappingConfigs: make([]MappingConfig, 0),
 	}

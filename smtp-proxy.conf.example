@@ -13,6 +13,10 @@ write_timeout = "10s"
 max_message_bytes = "20mib"
 max_recipients = "50"
 
+# Enable this for special handling of recipients like foo+bar@example.com
+# During lookups, "+bar" will be removed, so foo+bar@example.com becomes "foo@example.com"
+#recipient_delimiter = "+"
+
 # Uncomment the following to enable STARTTLS support
 #tls_cert = "/opt/smtp-proxy/etc/smtp-proxy/server.crt"
 #tls_key = "/opt/smtp-proxy/smtp-proxy/server.key"

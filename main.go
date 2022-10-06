@@ -67,6 +67,8 @@ func main() {
 	be := &ProxyBackend{
 		domain:   config.domain,
 		mappings: mappings,
+
+		recipientDelimiter: config.recipientDelimiter,
 	}
 
 	s := smtp.NewServer(be)

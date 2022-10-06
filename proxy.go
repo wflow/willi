@@ -30,6 +30,8 @@ var ErrInternal = &smtp.SMTPError{
 type ProxyBackend struct {
 	domain   string
 	mappings []ServerMap
+
+	recipientDelimiter string
 }
 
 func (b *ProxyBackend) Login(_ *smtp.ConnectionState, username, password string) (smtp.Session, error) {
@@ -47,6 +49,8 @@ func (b *ProxyBackend) AnonymousLogin(s *smtp.ConnectionState) (smtp.Session, er
 		delegate: &ProxySession{
 			log:      logger,
 			mappings: b.mappings,
+
+			recipientDelimiter: b.recipientDelimiter,
 
 			clientHelo: s.Hostname,
 			clientAddr: s.RemoteAddr,
@@ -74,6 +78,8 @@ func randSeq(n int) string {
 type ProxySession struct {
 	log      log.Logger
 	mappings []ServerMap
+
+	recipientDelimiter string
 
 	clientHelo string
 	clientAddr net.Addr
@@ -122,6 +128,10 @@ func (s *ProxySession) getServer(recipient string) (string, error) {
 }
 
 func (s *ProxySession) lookupRecipient(mapping ServerMap, recipient string) (string, error) {
+	if s.recipientDelimiter != "" {
+		recipient = removeSuffix(recipient, s.recipientDelimiter)
+	}
+
 	server, err := s.lookupKey(mapping, recipient)
 	if err == ErrNotFound {
 		parts := strings.Split(recipient, "@")
@@ -148,6 +158,23 @@ func (s *ProxySession) lookupKey(mapping ServerMap, key string) (string, error) 
 	}
 
 	return server, err
+}
+
+func removeSuffix(recipient string, recipientDelimiter string) string {
+	parts1 := strings.Split(recipient, "+")
+	if len(parts1) == 2 {
+		localPart := parts1[0]
+		suffixAtDomain := parts1[1]
+
+		parts2 := strings.Split(suffixAtDomain, "@")
+		if len(parts2) == 2 {
+			domain := parts2[1]
+
+			return fmt.Sprintf("%s@%s", localPart, domain)
+		}
+	}
+
+	return recipient
 }
 
 func xclient(c *textproto.Conn, s *ProxySession) error {
