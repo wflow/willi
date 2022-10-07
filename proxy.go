@@ -26,7 +26,6 @@ var ErrInternal = &smtp.SMTPError{
 	Message:      "Internal server error. Please try again later.",
 }
 
-// The ProxyBackend implements SMTP server methods.
 type ProxyBackend struct {
 	domain   string
 	mappings []Mapping
@@ -74,7 +73,6 @@ func randSeq(n int) string {
 	return string(b)
 }
 
-// A ProxySession is returned after EHLO.
 type ProxySession struct {
 	log      log.Logger
 	mappings []Mapping
@@ -90,13 +88,12 @@ type ProxySession struct {
 	msg ProxyMessage // the current message tx
 }
 
-// ProxyMessage encapsulates one message transaction (MAIL FROM, RCPT TO*, DATA)
 type ProxyMessage struct {
 	from   string
 	rcpts  []string
 	server string
 
-	client *smtp.Client // this is the client used to connect to the backend smtp server!
+	client *smtp.Client // this is the client used to connect to the upstream smtp server!
 	tls    bool
 	opts   smtp.MailOptions
 }
@@ -242,7 +239,7 @@ func (s *ProxySession) Rcpt(to string) error {
 		}
 
 		if ok, _ := s.msg.client.Extension("STARTTLS"); ok || !s.clientTls { // if client connection is plain, plain is ok
-			s.log.Debug("Trying STARTTLS with backend")
+			s.log.Debug("Trying STARTTLS with upstream server")
 
 			cfg := &tls.Config{
 				//InsecureSkipVerify: true,
@@ -279,7 +276,7 @@ func (s *ProxySession) Data(r io.Reader) error {
 		return err
 	}
 
-	// Message is now queued by backend server
+	// Message is now queued by upstream server
 
 	return nil
 }
@@ -290,10 +287,10 @@ func (s *ProxySession) Reset() { // called after each message DATA
 	}
 
 	if err := s.msg.client.Quit(); err != nil {
-		log.Warn("Error during QUIT with backend. Closing connection anyway", "error", err)
+		log.Warn("Error during QUIT with upstream server. Closing connection anyway", "error", err)
 
 		if err = s.msg.client.Close(); err != nil {
-			log.Warn("Error while closing connection with backend", "error", err)
+			log.Warn("Error while closing connection with upstream server", "error", err)
 		}
 	}
 
