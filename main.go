@@ -24,7 +24,7 @@ func main() {
 	flag.Parse()
 
 	if *versionFlag {
-		fmt.Printf("UNNAMED - version %s\n", version)
+		fmt.Printf("smtp-proxy - version %s\n", version)
 		os.Exit(0)
 	}
 
