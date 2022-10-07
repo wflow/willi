@@ -153,7 +153,7 @@ func (s *ProxySession) lookupRecipient(mapping Mapping, recipient string) (strin
 }
 
 func (s *ProxySession) lookupKey(mapping Mapping, key string) (string, error) {
-	server, err := mapping.GetServer(key)
+	server, err := mapping.Get(key)
 	if err == nil {
 		s.log.Debug("Lookup match", "mapping", fmt.Sprintf("%T", mapping), "key", key, "result", server)
 	}

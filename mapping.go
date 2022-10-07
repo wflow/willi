@@ -12,10 +12,10 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
-var ErrNoServerFound = errors.New("No server found for pattern")
+var ErrNoServerFound = errors.New("No server found for key")
 
 type Mapping interface {
-	GetServer(pattern string) (string, error)
+	Get(key string) (string, error)
 }
 
 type staticMapping struct {
@@ -31,7 +31,7 @@ func NewStaticMapping(server string) (Mapping, error) {
 	return &staticMapping{server: server}, nil
 }
 
-func (m *staticMapping) GetServer(pattern string) (string, error) {
+func (m *staticMapping) Get(key string) (string, error) {
 	return fmt.Sprintf("%s", m.server), nil
 }
 
@@ -69,17 +69,17 @@ func NewCSVMapping(filename string) (Mapping, error) {
 	}
 
 	for _, record := range records {
-		pattern := strings.TrimSpace(record[0])
+		key := strings.TrimSpace(record[0])
 		server := strings.TrimSpace(record[1])
 
-		mapping.servers[pattern] = server
+		mapping.servers[key] = server
 	}
 
 	return mapping, nil
 }
 
-func (m *csvMapping) GetServer(pattern string) (string, error) {
-	if server, ok := m.servers[pattern]; ok {
+func (m *csvMapping) Get(key string) (string, error) {
+	if server, ok := m.servers[key]; ok {
 		return server, nil
 	}
 
@@ -113,10 +113,10 @@ func NewSQLMapping(driverName string, dsn string, query string) (Mapping, error)
 	return &sqlMapping{driverName, dsn, query, db}, nil
 }
 
-func (m *sqlMapping) GetServer(pattern string) (string, error) {
+func (m *sqlMapping) Get(key string) (string, error) {
 	var server string
 
-	res := m.db.QueryRow(m.query, pattern)
+	res := m.db.QueryRow(m.query, key)
 
 	err := res.Scan(&server)
 	if err == sql.ErrNoRows {
