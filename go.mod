@@ -1,4 +1,4 @@
-module webflow/smtp-proxy
+module webflow/willi
 
 go 1.19
 
