@@ -309,8 +309,6 @@ func (s *ProxySession) Logout() error {
 type LoggingSession struct {
 	log      log.Logger
 	delegate *ProxySession
-
-	lastError error
 }
 
 func (s *LoggingSession) Mail(from string, opts smtp.MailOptions) error {
@@ -318,7 +316,7 @@ func (s *LoggingSession) Mail(from string, opts smtp.MailOptions) error {
 	s.logDebug(err, "MAIL FROM", "from", from, "opts", opts)
 
 	if err != nil {
-		s.log.Info("Message rejected", s.getCanonicalLogLineCtx()...)
+		s.log.Info("Message rejected", s.getCanonicalLogLineCtx(err)...)
 	}
 
 	return s.wrapAsSMTPError(err)
@@ -329,7 +327,7 @@ func (s *LoggingSession) Rcpt(to string) error {
 	s.logDebug(err, "RCPT TO", "to", to)
 
 	if err != nil {
-		s.log.Info("Message rejected", s.getCanonicalLogLineCtx()...)
+		s.log.Info("Message rejected", s.getCanonicalLogLineCtx(err)...)
 	}
 
 	return s.wrapAsSMTPError(err)
@@ -339,9 +337,12 @@ func (s *LoggingSession) Data(r io.Reader) error {
 	err := s.delegate.Data(r)
 	s.logDebug(err, "DATA")
 
-	if err == nil {
-		s.log.Info("Message accepted", s.getCanonicalLogLineCtx()...)
+	text := "Message accepted"
+	if err != nil {
+		text = "Message rejected"
 	}
+
+	s.log.Info(text, s.getCanonicalLogLineCtx(err)...)
 
 	return s.wrapAsSMTPError(err)
 }
@@ -351,8 +352,6 @@ func (s *LoggingSession) Reset() {
 
 	s.delegate.Reset()
 	s.log.Debug("Reset")
-
-	s.lastError = nil
 }
 
 func (s *LoggingSession) Logout() error {
@@ -361,17 +360,10 @@ func (s *LoggingSession) Logout() error {
 	err := s.delegate.Logout()
 	s.logDebug(err, "Logout")
 
-	if s.lastError != nil {
-		s.log.Info("Message rejected", s.getCanonicalLogLineCtx()...)
-	}
-
-	smtpError := s.wrapAsSMTPError(err)
-	s.lastError = nil
-
-	return smtpError
+	return s.wrapAsSMTPError(err)
 }
 
-func (s *LoggingSession) getCanonicalLogLineCtx() []interface{} {
+func (s *LoggingSession) getCanonicalLogLineCtx(err error) []interface{} {
 	session := s.delegate
 	msg := session.msg
 
@@ -381,8 +373,8 @@ func (s *LoggingSession) getCanonicalLogLineCtx() []interface{} {
 		"upstream", msg.server, "upstream_tls", msg.tls,
 	}
 
-	if s.lastError != nil {
-		ctx = append(ctx, "error", s.formatError(s.lastError), "error_src", s.formatErrorSource(s.lastError))
+	if err != nil {
+		ctx = append(ctx, "error", s.formatError(err), "error_src", s.formatErrorSource(err))
 	}
 
 	return ctx
@@ -396,8 +388,6 @@ func (s *LoggingSession) logDebug(err error, msg string, ctx ...interface{}) {
 }
 
 func (s *LoggingSession) wrapAsSMTPError(err error) error {
-	s.lastError = err
-
 	switch err.(type) {
 	case nil:
 		return nil
