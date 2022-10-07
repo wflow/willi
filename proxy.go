@@ -370,7 +370,7 @@ func (s *LoggingSession) getCanonicalLogLineCtx() []interface{} {
 	ctx := []interface{}{
 		"client_ip", s.formatIP(session.clientAddr), "client_helo", session.clientHelo, "client_tls", session.clientTls,
 		"from", msg.from, "to", strings.Join(msg.rcpts, ","),
-		"relay", msg.server, "relay_tls", msg.tls,
+		"upstream", msg.server, "upstream_tls", msg.tls,
 	}
 
 	if s.lastError != nil {
