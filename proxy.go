@@ -317,14 +317,14 @@ func (s *LoggingSession) Mail(from string, opts smtp.MailOptions) error {
 	err := s.delegate.Mail(from, opts)
 
 	s.logDebug(err, "MAIL FROM", "from", from, "opts", opts)
-	return s.wrapError(err)
+	return s.wrapAsSMTPError(err)
 }
 
 func (s *LoggingSession) Rcpt(to string) error {
 	err := s.delegate.Rcpt(to)
 
 	s.logDebug(err, "RCPT TO", "to", to)
-	return s.wrapError(err)
+	return s.wrapAsSMTPError(err)
 }
 
 func (s *LoggingSession) Data(r io.Reader) error {
@@ -335,7 +335,7 @@ func (s *LoggingSession) Data(r io.Reader) error {
 		s.log.Info("Message accepted", s.getCanonicalLogLineCtx()...)
 	}
 
-	return s.wrapError(err)
+	return s.wrapAsSMTPError(err)
 }
 
 func (s *LoggingSession) Reset() {
@@ -357,7 +357,7 @@ func (s *LoggingSession) Logout() error {
 		s.log.Info("Message rejected", s.getCanonicalLogLineCtx()...)
 	}
 
-	smtpError := s.wrapError(err)
+	smtpError := s.wrapAsSMTPError(err)
 	s.lastError = nil
 
 	return smtpError
@@ -387,7 +387,7 @@ func (s *LoggingSession) logDebug(err error, msg string, ctx ...interface{}) {
 	s.log.Debug(msg, ctx...)
 }
 
-func (s *LoggingSession) wrapError(err error) error {
+func (s *LoggingSession) wrapAsSMTPError(err error) error {
 	s.lastError = err
 
 	switch err.(type) {
