@@ -374,7 +374,7 @@ func (s *LoggingSession) getCanonicalLogLineCtx() []interface{} {
 	}
 
 	if s.lastError != nil {
-		ctx = append(ctx, "error", s.formatError(s.lastError))
+		ctx = append(ctx, "error", s.formatError(s.lastError), "error_src", s.formatErrorSource(s.lastError))
 	}
 
 	return ctx
@@ -421,4 +421,15 @@ func (s *LoggingSession) formatIP(addr net.Addr) string {
 	}
 
 	return addr.String() // safety fallback, should never happen
+}
+
+func (s *LoggingSession) formatErrorSource(err error) string {
+	switch err.(type) {
+	case nil:
+		return ""
+	case *smtp.SMTPError:
+		return "upstream"
+	default:
+		return "internal"
+	}
 }
