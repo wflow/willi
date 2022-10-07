@@ -315,15 +315,23 @@ type LoggingSession struct {
 
 func (s *LoggingSession) Mail(from string, opts smtp.MailOptions) error {
 	err := s.delegate.Mail(from, opts)
-
 	s.logDebug(err, "MAIL FROM", "from", from, "opts", opts)
+
+	if err != nil {
+		s.log.Info("Message rejected", s.getCanonicalLogLineCtx()...)
+	}
+
 	return s.wrapAsSMTPError(err)
 }
 
 func (s *LoggingSession) Rcpt(to string) error {
 	err := s.delegate.Rcpt(to)
-
 	s.logDebug(err, "RCPT TO", "to", to)
+
+	if err != nil {
+		s.log.Info("Message rejected", s.getCanonicalLogLineCtx()...)
+	}
+
 	return s.wrapAsSMTPError(err)
 }
 
