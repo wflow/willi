@@ -29,7 +29,9 @@ If a client specifies multiple `RCPT TO` headers, only the first is used to sele
 
 No support for "advanced" SMTP features like SMTPUTF8. This is because when the client connects, smtp-proxy doesn't know yet, what upstream server will be used and what feature set it supports.
 
-No support for authentication. This is by design, as smtp-proxy is primarily meant to be used for incoming mail from other SMTP servers (MX).
+No support for authentication. This is by design, as smtp-proxy is primarily meant to be used for incoming mail.
+
+Breaks greylisting on upstream servers unless they support XCLIENT. Without XCLIENT the upstream server only sees the proxy's IP.
 
 # Development
 
