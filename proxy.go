@@ -8,6 +8,8 @@ import (
 	"net"
 	"net/textproto"
 	"strings"
+	"sync"
+	"time"
 
 	log "github.com/inconshreveable/log15"
 
@@ -27,6 +29,7 @@ var ErrInternal = &smtp.SMTPError{
 }
 
 type ProxyBackend struct {
+	loggers  *SessionLoggers
 	domain   string
 	mappings []Mapping
 
@@ -38,7 +41,10 @@ func (b *ProxyBackend) Login(_ *smtp.ConnectionState, username, password string)
 }
 
 func (b *ProxyBackend) AnonymousLogin(s *smtp.ConnectionState) (smtp.Session, error) {
-	logger := log.New("sid", randSeq(10))
+	logger, ok := b.loggers.Get(s.RemoteAddr)
+	if !ok {
+		logger = log.New("sid", "") // fallback, should not happen :)
+	}
 
 	logger.Debug("TLS", "connection_state", s)
 	logger.Debug("HELO/EHLO", "client_ip", s.RemoteAddr, "client_helo", s.Hostname, "tls", s.TLS.HandshakeComplete)
@@ -368,7 +374,7 @@ func (s *LoggingSession) getCanonicalLogLineCtx(err error) []interface{} {
 	msg := session.msg
 
 	ctx := []interface{}{
-		"client_ip", s.formatIP(session.clientAddr), "client_helo", session.clientHelo, "client_tls", session.clientTls,
+		"client", session.clientAddr, "client_helo", session.clientHelo, "client_tls", session.clientTls,
 		"from", msg.from, "to", strings.Join(msg.rcpts, ","),
 		"upstream", msg.server, "upstream_tls", msg.tls,
 	}
@@ -413,14 +419,6 @@ func (s *LoggingSession) formatError(err error) string {
 	}
 }
 
-func (s *LoggingSession) formatIP(addr net.Addr) string {
-	if tcpAddr, ok := addr.(*net.TCPAddr); ok {
-		return tcpAddr.IP.String()
-	}
-
-	return addr.String() // safety fallback, should never happen
-}
-
 func (s *LoggingSession) formatErrorSource(err error) string {
 	switch err.(type) {
 	case nil:
@@ -430,4 +428,109 @@ func (s *LoggingSession) formatErrorSource(err error) string {
 	default:
 		return "internal"
 	}
+}
+
+type SessionLoggers struct {
+	loggers map[net.Addr]log.Logger
+	lock    sync.RWMutex
+}
+
+func (s *SessionLoggers) New(addr net.Addr) log.Logger {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	l := log.New("sid", randSeq(10))
+	s.loggers[addr] = l
+	return l
+}
+
+func (s *SessionLoggers) Delete(addr net.Addr) (log.Logger, bool) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	l, ok := s.loggers[addr]
+	delete(s.loggers, addr)
+	return l, ok
+}
+
+func (s *SessionLoggers) Get(addr net.Addr) (log.Logger, bool) {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	l, ok := s.loggers[addr]
+	return l, ok
+}
+
+type SessionListener struct {
+	l       net.Listener
+	loggers *SessionLoggers
+}
+
+func (l *SessionListener) Accept() (net.Conn, error) {
+	c, err := l.l.Accept()
+
+	logger := l.loggers.New(c.RemoteAddr())
+	if err == nil {
+		logger.Debug("Client connected", "client", c.RemoteAddr())
+	} else {
+		logger.Debug("Client connect failed", "client", c.RemoteAddr(), "error", err)
+	}
+
+	return &SessionConn{c: c, loggers: l.loggers}, err
+}
+
+func (l *SessionListener) Addr() net.Addr {
+	return l.l.Addr()
+}
+
+func (l *SessionListener) Close() error {
+	return l.l.Close()
+}
+
+type SessionConn struct {
+	c       net.Conn
+	loggers *SessionLoggers
+}
+
+func (c *SessionConn) Read(b []byte) (n int, err error) {
+	return c.c.Read(b)
+}
+
+func (c *SessionConn) Write(b []byte) (n int, err error) {
+	return c.c.Write(b)
+}
+
+func (c *SessionConn) Close() error {
+	err := c.c.Close()
+	l, ok := c.loggers.Delete(c.RemoteAddr())
+
+	if ok {
+		if err == nil {
+			l.Debug("Client disconnected")
+		} else {
+			l.Debug("Client disconnect failed", "error", err)
+		}
+	}
+
+	return err
+}
+
+func (c *SessionConn) LocalAddr() net.Addr {
+	return c.c.LocalAddr()
+}
+
+func (c *SessionConn) RemoteAddr() net.Addr {
+	return c.c.RemoteAddr()
+}
+
+func (c *SessionConn) SetDeadline(t time.Time) error {
+	return c.c.SetDeadline(t)
+}
+
+func (c *SessionConn) SetReadDeadline(t time.Time) error {
+	return c.c.SetReadDeadline(t)
+}
+
+func (c *SessionConn) SetWriteDeadline(t time.Time) error {
+	return c.c.SetWriteDeadline(t)
 }

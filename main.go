@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"math/rand"
+	"net"
 	"os"
 	"time"
 
@@ -54,7 +55,12 @@ func main() {
 		tlsConfig = &tls.Config{Certificates: []tls.Certificate{cer}}
 	}
 
+	loggers := &SessionLoggers{
+		loggers: make(map[net.Addr]log.Logger),
+	}
+
 	be := &ProxyBackend{
+		loggers:  loggers,
 		domain:   config.Domain,
 		mappings: config.Mappings,
 
@@ -73,8 +79,27 @@ func main() {
 	s.TLSConfig = tlsConfig
 
 	log.Info("Starting server", "address", s.Addr)
-	if err := s.ListenAndServe(); err != nil {
+	if err := ListenAndServe(s, loggers); err != nil {
 		log.Error("Failed to start server", "error", err)
 		os.Exit(1)
 	}
+}
+
+func ListenAndServe(s *smtp.Server, loggers *SessionLoggers) error {
+	network := "tcp"
+	if s.LMTP {
+		network = "unix"
+	}
+
+	addr := s.Addr
+	if !s.LMTP && addr == "" {
+		addr = ":smtp"
+	}
+
+	l, err := net.Listen(network, addr)
+	if err != nil {
+		return err
+	}
+
+	return s.Serve(&SessionListener{l: l, loggers: loggers})
 }
