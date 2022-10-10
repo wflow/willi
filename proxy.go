@@ -244,7 +244,7 @@ func (s *ProxySession) Rcpt(to string) error {
 			}
 		}
 
-		if ok, _ := s.msg.client.Extension("STARTTLS"); ok || !s.clientTls { // if client connection is plain, plain is ok
+		if ok, _ := s.msg.client.Extension("STARTTLS"); ok {
 			s.log.Debug("Trying STARTTLS with upstream server")
 
 			cfg := &tls.Config{
