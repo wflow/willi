@@ -43,7 +43,7 @@ $> go build # build for local testing
 ## Build a release
 
 ```
-$> git tag -A v1.2.3 -m "v1.2.3"
+$> git tag -a v1.2.3 -m "v1.2.3"
 $> make release # builds willi-v1.2.3.tar.gz
 $> git push --tags
 
