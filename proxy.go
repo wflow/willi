@@ -192,9 +192,20 @@ func xclient(c *textproto.Conn, s *ProxySession) error {
 		ipStr = fmt.Sprintf("IPV6:%s", clientIP)
 	}
 
-	// FIXME HELO name must be encoded s according to RFC1891 "xtext" (only relevant for non-ascii chars)
+	// FIXME HELO/NAME must be encoded according to RFC1891 "xtext" (only relevant for non-ascii chars)
 
-	id, err := c.Cmd(fmt.Sprintf("XCLIENT ADDR=%s HELO=%s", ipStr, s.clientHelo))
+	var clientHost string
+	hostnames, err := net.LookupAddr(ipStr)
+	if err != nil {
+		s.log.Warn("Failure during DNS lookup for %s: %w", ipStr, err)
+	}
+	if len(hostnames) > 0 {
+		clientHost = strings.TrimSuffix(hostnames[0], ".")
+	} else {
+		clientHost = "[TEMPUNAVAIL]"
+	}
+
+	id, err := c.Cmd(fmt.Sprintf("XCLIENT ADDR=%s NAME=%s HELO=%s", ipStr, clientHost, s.clientHelo))
 	if err != nil {
 		return err
 	}
@@ -238,12 +249,6 @@ func (s *ProxySession) Rcpt(to string) error {
 			return err
 		}
 
-		if ok, _ := s.msg.client.Extension("XCLIENT"); ok {
-			if err := xclient(s.msg.client.Text, s); err != nil {
-				return err
-			}
-		}
-
 		if ok, _ := s.msg.client.Extension("STARTTLS"); ok {
 			s.log.Debug("Trying STARTTLS with upstream server")
 
@@ -254,6 +259,12 @@ func (s *ProxySession) Rcpt(to string) error {
 				return err
 			}
 			s.msg.tls = true
+		}
+
+		if ok, _ := s.msg.client.Extension("XCLIENT"); ok {
+			if err := xclient(s.msg.client.Text, s); err != nil {
+				return err
+			}
 		}
 
 		if err := s.msg.client.Mail(s.msg.from, &s.msg.opts); err != nil {
