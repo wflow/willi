@@ -47,7 +47,7 @@ func (b *ProxyBackend) AnonymousLogin(s *smtp.ConnectionState) (smtp.Session, er
 	}
 
 	logger.Debug("TLS", "connection_state", s)
-	logger.Debug("HELO/EHLO", "client_ip", s.RemoteAddr, "client_helo", s.Hostname, "tls", s.TLS.HandshakeComplete)
+	logger.Debug("HELO/EHLO", "client", s.RemoteAddr, "client_helo", s.Hostname, "tls", s.TLS.HandshakeComplete)
 
 	return &LoggingSession{
 		log: logger,
