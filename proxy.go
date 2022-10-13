@@ -249,7 +249,7 @@ func (s *ProxySession) Rcpt(to string) error {
 			return err
 		}
 
-		if ok, _ := s.msg.client.Extension("STARTTLS"); ok {
+		if ok, _ := s.msg.client.Extension("STARTTLS"); ok && s.clientTls {
 			s.log.Debug("Trying STARTTLS with upstream server")
 
 			cfg := &tls.Config{

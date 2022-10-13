@@ -10,7 +10,7 @@ Willi is a SMTP proxy. It transparently proxies SMTP sessions to an upstream SMT
 * Map single recipients (foo@bar.com) or whole domains (bar.com).
 * Flexible number and ordering of mappings.
 * STARTTLS support in connection to clients.
-* Always use STARTTLS in connection to upstream server, if upstream server supports it.
+* Use STARTTLS in connection to upstream server, if client used STARTTLS and upstream server supports it.
 * Forward real client IP via XCLIENT, if upstream server supports it.
 
 ## Installation
