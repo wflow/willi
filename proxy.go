@@ -197,7 +197,7 @@ func xclient(c *textproto.Conn, s *ProxySession) error {
 	var clientHost string
 	hostnames, err := net.LookupAddr(ipStr)
 	if err != nil {
-		s.log.Warn("Failure during DNS lookup for %s: %w", ipStr, err)
+		s.log.Warn("Error during DNS lookup", "ip", ipStr, "error", err)
 	}
 	if len(hostnames) > 0 {
 		clientHost = strings.TrimSuffix(hostnames[0], ".")
