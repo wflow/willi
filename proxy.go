@@ -187,23 +187,23 @@ func removeSuffix(recipient string, recipientDelimiter string) string {
 func xclient(c *textproto.Conn, s *ProxySession) error {
 	clientIP := s.clientAddr.(*net.TCPAddr).IP
 
-	ipStr := clientIP.String()
-	if clientIP.To4() == nil {
-		ipStr = fmt.Sprintf("IPV6:%s", clientIP)
-	}
-
-	// FIXME HELO/NAME must be encoded according to RFC1891 "xtext" (only relevant for non-ascii chars)
-
 	var clientHost string
-	hostnames, err := net.LookupAddr(ipStr)
+	hostnames, err := net.LookupAddr(clientIP.String())
 	if err != nil {
-		s.log.Warn("Error during DNS lookup", "ip", ipStr, "error", err)
+		s.log.Debug("DNS lookup for client failed", "client", s.clientAddr, "error", err)
 	}
 	if len(hostnames) > 0 {
 		clientHost = strings.TrimSuffix(hostnames[0], ".")
 	} else {
 		clientHost = "[TEMPUNAVAIL]"
 	}
+
+	ipStr := clientIP.String()
+	if clientIP.To4() == nil {
+		ipStr = fmt.Sprintf("IPV6:%s", clientIP)
+	}
+
+	// FIXME HELO/NAME must be encoded according to RFC1891 "xtext" (only relevant for non-ascii chars)
 
 	id, err := c.Cmd(fmt.Sprintf("XCLIENT ADDR=%s NAME=%s HELO=%s", ipStr, clientHost, s.clientHelo))
 	if err != nil {
