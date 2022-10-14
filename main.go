@@ -40,6 +40,8 @@ func main() {
 		log.LvlFilterHandler(log.Lvl(config.LogLevel),
 			log.StreamHandler(os.Stdout, LogfmtFormatWithoutTimestamp())))
 
+	log.Info("Starting willi", "version", version)
+
 	for _, mapping := range config.Mappings {
 		log.Info("Using mapping", "mapping", mapping)
 	}
