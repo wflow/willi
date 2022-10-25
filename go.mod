@@ -17,5 +17,6 @@ require (
 	github.com/emersion/go-sasl v0.0.0-20200509203442-7bfe0ed36a21 // indirect
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/hjson/hjson-go/v4 v4.2.0
+	github.com/jmoiron/sqlx v1.3.5
 	github.com/pelletier/go-toml v1.9.5
 )

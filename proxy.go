@@ -117,26 +117,26 @@ func buildZeroProxyMessage() ProxyMessage {
 	return buildProxyMessage("", smtp.MailOptions{})
 }
 
-func (s *ProxySession) getServer(recipient string) (string, error) {
+func (s *ProxySession) getUpstream(recipient string) (Upstream, error) {
 	for _, mapping := range s.mappings {
 		server, err := s.lookupRecipient(mapping, recipient)
-		if err == ErrNoServerFound {
+		if err == ErrNoUpstreamFound {
 			continue
 		}
 
 		return server, err
 	}
 
-	return "", ErrNoServerFound
+	return Upstream{}, ErrNoUpstreamFound
 }
 
-func (s *ProxySession) lookupRecipient(mapping Mapping, recipient string) (string, error) {
+func (s *ProxySession) lookupRecipient(mapping Mapping, recipient string) (Upstream, error) {
 	if s.recipientDelimiter != "" {
 		recipient = removeSuffix(recipient, s.recipientDelimiter)
 	}
 
 	server, err := s.lookupKey(mapping, recipient)
-	if err == ErrNoServerFound {
+	if err == ErrNoUpstreamFound {
 		parts := strings.Split(recipient, "@")
 		if len(parts) == 2 {
 			domain := parts[1]
@@ -144,23 +144,19 @@ func (s *ProxySession) lookupRecipient(mapping Mapping, recipient string) (strin
 		}
 	}
 
-	if err != nil && err != ErrNoServerFound {
-		return "", fmt.Errorf("lookup %T: %w", mapping, err)
+	if err != nil && err != ErrNoUpstreamFound {
+		return Upstream{}, fmt.Errorf("lookup %T: %w", mapping, err)
 	}
 
-	if strings.Contains(server, ":") {
-		return server, err
-	}
-
-	return fmt.Sprintf("%s:25", server), err
+	return server, err
 }
 
-func (s *ProxySession) lookupKey(mapping Mapping, key string) (string, error) {
+func (s *ProxySession) lookupKey(mapping Mapping, key string) (Upstream, error) {
 	server, err := mapping.Get(key)
 	if err == nil {
 		s.log.Debug("Lookup match", "mapping", fmt.Sprintf("%T", mapping), "key", key, "result", server)
 	}
-	if err == ErrNoServerFound {
+	if err == ErrNoUpstreamFound {
 		s.log.Debug("Lookup miss", "mapping", fmt.Sprintf("%T", mapping), "key", key)
 	}
 
@@ -229,15 +225,15 @@ func (s *ProxySession) Rcpt(to string) error {
 	s.msg.rcpts = append(s.msg.rcpts, to)
 
 	if s.msg.client == nil {
-		server, err := s.getServer(to)
-		if err == ErrNoServerFound {
+		upstream, err := s.getUpstream(to)
+		if err == ErrNoUpstreamFound {
 			return ErrRelayAccessDenied
 		}
 		if err != nil {
 			return err
 		}
 
-		s.msg.server = server
+		s.msg.server = upstream.Server
 
 		c, err := smtp.Dial(s.msg.server)
 		if err != nil {
@@ -253,7 +249,7 @@ func (s *ProxySession) Rcpt(to string) error {
 			s.log.Debug("Trying STARTTLS with upstream server")
 
 			cfg := &tls.Config{
-				//InsecureSkipVerify: true,
+				InsecureSkipVerify: !upstream.TlsVerify,
 			}
 			if err := s.msg.client.StartTLS(cfg); err != nil {
 				return err

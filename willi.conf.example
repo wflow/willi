@@ -52,8 +52,15 @@
 # If a mapping lookup in the chain fails with an error, the whole message is temporarily
 # rejected (450). No other mappings are tried.
 #
-# All mappings must return a server in the form <hostname>[:port].
-# If no port is returned, port 25 is used.
+# All mappings must return the following fields:
+#
+# - server: A string of format <hostname>[:port].
+#           If no port is returned, port 25 is used.
+#
+# - tls_verify: A boolean value. The exact textual value depends on the mapping.
+#               See there for details.
+#               Defines if the upstream server's TLS certificate should be verified.
+#               If the field is not returned, true is used.
 mappings: [
     {
         # Lookup server in a SQL database. Only MySQL is supported at the moment.
@@ -62,9 +69,9 @@ mappings: [
         # Connection is in DSN form (see https://github.com/go-sql-driver/mysql#dsn-data-source-name)
         connection: root:password@tcp(mysqlserver:3306)/mail?tls=true
 
-        # SQL SELECT statement with one parameter ('?') that returns a single column.
+        # SQL SELECT statement with one parameter ('?') that returns the columns 'server' and 'tls_verify'.
         # If multiple rows are returned, only the first one will be used.
-        query: SELECT server FROM mx_external_servers WHERE pattern = ?
+        query: SELECT server, 'true' AS tls_verify FROM mx_external_servers WHERE pattern = ?
     },
     {
         # Lookup server in a CSV file.
@@ -72,9 +79,9 @@ mappings: [
         
         # CSV file for lookups. Must contain a header line and be in the following format:
         #
-        # pattern;server
-        # foo@bar.com;mail.bar.com:25
-        # baz.org;smtp.foo.com
+        # pattern;server;tls_verify
+        # foo@bar.com;mail.bar.com:25;true
+        # baz.org;smtp.foo.com;false
         #
         # Empty lines and lines starting with '#' are ignored
         file: mapping.csv
@@ -86,6 +93,7 @@ mappings: [
         # This server will be returned for any lookup.
         #
         # Place a static mapping last in the config file to define a default upstream server.
-        server: external:5025
+        server: mail.external.org:5025
+        tls_verify: false
     }
 ]

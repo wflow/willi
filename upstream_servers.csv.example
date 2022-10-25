@@ -1,6 +1,6 @@
-pattern;server
+pattern;server;tls_verify
 somedomain.com;mail.somedomain.com
-user@somedomain.com;mail.other.org:25
-otherdomain.net;mail.other.org:5025
+user@somedomain.com;mail.other.org:25;false
+otherdomain.net;mail.other.org:5025;true
 
-# Comments and emtpy lines are ignored
+# Comments and empty lines are ignored

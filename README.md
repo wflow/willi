@@ -27,8 +27,9 @@ An example config file is provided in `/opt/willi/etc/willi.conf.example`. Copy 
 
 * If a client specifies multiple `RCPT TO` headers, only the first is used to select an upstream server. It will receive the complete SMTP session, including all other `RCPT TO` headers. If the upstream server does not accept mail for all recipients, it will reject the mail.
 * If an upstream server does not support/allow XCLIENT from Willi, it only sees the proxy's IP. This can cause trouble with spam-filtering: If the upstream server blocks Willi's IP or greylists it, no client can send any mail to this server via Willi.
-* No support for "advanced" SMTP features like SMTPUTF8. This is because when the client connects, willi doesn't know yet what upstream server will be used and what features it supports.
-* No support for authentication. This is by design, as willi is primarily meant to be used for incoming mail.
+* No support for "advanced" SMTP features like SMTPUTF8. This is because when the client connects, Willi doesn't know yet what upstream server will be used and what features it supports.
+* If upstream server does not support STARTTLS, Willi falls back to plain connection (even if client sent STARTTLS).
+* No support for authentication. This is by design, as Willi is primarily meant to be used for incoming mail.
 
 # Development
 

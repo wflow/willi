@@ -106,10 +106,25 @@ func parseStaticMapping(mapping map[string]interface{}) (Mapping, error) {
 
 	server, ok := s.(string)
 	if !ok {
-		return nil, fmt.Errorf("static mapping: 'server:' must be a string but was %T", s)
+		return nil, fmt.Errorf("static mapping: server must be a string but was %T", s)
 	}
 
-	return NewStaticMapping(server)
+	v, ok := mapping["tls_verify"]
+	if !ok {
+		v = true
+	}
+
+	tlsVerify, ok := v.(bool)
+	if !ok {
+		return nil, fmt.Errorf("static mapping: tls_verify must be bool, but was %T", v)
+	}
+
+	m, err := NewStaticMapping(server, tlsVerify)
+	if err != nil {
+		return nil, fmt.Errorf("static mapping: %w", err)
+	}
+
+	return m, nil
 }
 
 func parseCSVMapping(mapping map[string]interface{}) (Mapping, error) {
@@ -123,7 +138,12 @@ func parseCSVMapping(mapping map[string]interface{}) (Mapping, error) {
 		return nil, fmt.Errorf("csv mapping: 'file:' must be a string but was %T", f)
 	}
 
-	return NewCSVMapping(file)
+	m, err := NewCSVMapping(file)
+	if err != nil {
+		return nil, fmt.Errorf("csv mapping: %w", err)
+	}
+
+	return m, nil
 }
 
 func parseSQLMapping(mapping map[string]interface{}) (Mapping, error) {
@@ -147,7 +167,12 @@ func parseSQLMapping(mapping map[string]interface{}) (Mapping, error) {
 		return nil, fmt.Errorf("sql mapping: 'query:' must be a string but was %T", q)
 	}
 
-	return NewSQLMapping("mysql", connection, query)
+	m, err := NewSQLMapping("mysql", connection, query)
+	if err != nil {
+		return nil, fmt.Errorf("sql mapping: %w", err)
+	}
+
+	return m, nil
 }
 
 func loadConfigFile(configFile string) (*Config, error) {
