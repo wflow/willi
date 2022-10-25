@@ -131,24 +131,48 @@ func (s *ProxySession) getUpstream(recipient string) (Upstream, error) {
 }
 
 func (s *ProxySession) lookupRecipient(mapping Mapping, recipient string) (Upstream, error) {
-	if s.recipientDelimiter != "" {
-		recipient = removeSuffix(recipient, s.recipientDelimiter)
-	}
-
+	// foo+bar@domain.com
 	server, err := s.lookupKey(mapping, recipient)
-	if err == ErrNoUpstreamFound {
-		parts := strings.Split(recipient, "@")
-		if len(parts) == 2 {
-			domain := parts[1]
-			server, err = s.lookupKey(mapping, domain)
-		}
+	if err == nil {
+		return server, nil
 	}
 
-	if err != nil && err != ErrNoUpstreamFound {
+	if err != ErrNoUpstreamFound {
 		return Upstream{}, fmt.Errorf("lookup %T: %w", mapping, err)
 	}
 
-	return server, err
+	if s.recipientDelimiter != "" {
+		recipientWithoutSuffix := removeSuffix(recipient, s.recipientDelimiter)
+
+		if recipientWithoutSuffix != recipient {
+			// foo@domain.com
+			server, err = s.lookupKey(mapping, recipientWithoutSuffix)
+			if err == nil {
+				return server, nil
+			}
+
+			if err != ErrNoUpstreamFound {
+				return Upstream{}, fmt.Errorf("lookup %T: %w", mapping, err)
+			}
+		}
+	}
+
+	parts := strings.Split(recipient, "@")
+	if len(parts) == 2 {
+		domain := parts[1]
+
+		// domain.com
+		server, err = s.lookupKey(mapping, domain)
+		if err == nil {
+			return server, nil
+		}
+
+		if err != ErrNoUpstreamFound {
+			return Upstream{}, fmt.Errorf("lookup %T: %w", mapping, err)
+		}
+	}
+
+	return Upstream{}, ErrNoUpstreamFound
 }
 
 func (s *ProxySession) lookupKey(mapping Mapping, key string) (Upstream, error) {

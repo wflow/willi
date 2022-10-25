@@ -20,8 +20,9 @@
 #max_message_bytes: 20mib
 #max_recipients: 50
 
-# Enable this for special handling of recipients like foo+bar@example.com.
-# Mapping lookups will be made for 'foo@example.com' instead of 'foo+bar@example.com'.
+# Enable this for special handling of recipients like foo+bar@domain.com.
+# Instead of looking up 'foo+bar@domain.com' and 'domain.com', three lookups
+# will be made: 'foo+bar@domain.com', 'foo@domain.com' and 'domain.com'.
 # Default value is <empty> (no special handling)
 #recipient_delimiter: +
 
