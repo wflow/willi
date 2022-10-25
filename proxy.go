@@ -164,7 +164,7 @@ func (s *ProxySession) lookupKey(mapping Mapping, key string) (Upstream, error) 
 }
 
 func removeSuffix(recipient string, recipientDelimiter string) string {
-	parts1 := strings.Split(recipient, "+")
+	parts1 := strings.Split(recipient, recipientDelimiter)
 	if len(parts1) == 2 {
 		localPart := parts1[0]
 		suffixAtDomain := parts1[1]
