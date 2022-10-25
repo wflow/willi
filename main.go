@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	configFileFlag = flag.String("c", "config.conf", "Path to configuration file")
+	configFileFlag = flag.String("c", "willi.conf", "Path to configuration file")
 	versionFlag    = flag.Bool("V", false, "Print version and exit")
 	version        = "undefined" // updated during release build
 )
