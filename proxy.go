@@ -124,6 +124,10 @@ func (s *ProxySession) getUpstream(recipient string) (Upstream, error) {
 			continue
 		}
 
+		if !strings.Contains(server.Server, ":") {
+			server.Server = server.Server + ":25"
+		}
+
 		return server, err
 	}
 
