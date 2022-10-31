@@ -144,18 +144,19 @@ func NewSQLMapping(driverName string, dsn string, query string) (Mapping, error)
 type dbbool bool
 
 func (b *dbbool) Scan(src interface{}) error {
-	v, ok := src.(string)
+	v, ok := src.([]uint8)
 	if !ok {
 		return fmt.Errorf("expected 'true' or 'false' but got %T", src)
 	}
+	s := string(v)
 
-	switch strings.ToLower(v) {
+	switch strings.ToLower(s) {
 	case "true":
 		*b = true
 	case "false":
 		*b = false
 	default:
-		return fmt.Errorf("expected 'true' or 'false' but got '%s'", v)
+		return fmt.Errorf("expected 'true' or 'false' but got '%s'", s)
 	}
 
 	return nil
