@@ -9,12 +9,13 @@ import (
 	"os"
 	"time"
 
+	"github.com/emersion/go-sasl"
 	"github.com/emersion/go-smtp"
 	log "github.com/inconshreveable/log15"
 )
 
 var (
-	configFileFlag = flag.String("c", "willi.conf", "Path to configuration file")
+	configFileFlag = flag.String("c", "lilli.conf", "Path to configuration file")
 	versionFlag    = flag.Bool("V", false, "Print version and exit")
 	version        = "undefined" // updated during release build
 )
@@ -25,7 +26,7 @@ func main() {
 	flag.Parse()
 
 	if *versionFlag {
-		fmt.Printf("willi smtp proxy - version %s\n", version)
+		fmt.Printf("lilli smtp proxy - version %s\n", version)
 		os.Exit(0)
 	}
 
@@ -40,11 +41,7 @@ func main() {
 		log.LvlFilterHandler(log.Lvl(config.LogLevel),
 			log.StreamHandler(os.Stdout, LogfmtFormatWithoutTimestamp())))
 
-	log.Info("Starting willi", "version", version)
-
-	for _, mapping := range config.Mappings {
-		log.Info("Using mapping", "mapping", mapping)
-	}
+	log.Info("Starting lilli", "version", version)
 
 	var tlsConfig *tls.Config
 	if config.TlsCert != "" && config.TlsKey != "" {
@@ -54,7 +51,34 @@ func main() {
 			os.Exit(1)
 		}
 
-		tlsConfig = &tls.Config{Certificates: []tls.Certificate{cer}}
+		tlsConfig = &tls.Config{
+			Certificates: []tls.Certificate{cer},
+			MinVersion:   tls.VersionTLS10,
+			CipherSuites: []uint16{
+				tls.TLS_RSA_WITH_RC4_128_SHA,
+				tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
+				tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+				tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+				tls.TLS_RSA_WITH_AES_128_CBC_SHA256,
+				tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_ECDSA_WITH_RC4_128_SHA,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+				tls.TLS_ECDHE_RSA_WITH_RC4_128_SHA,
+				tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+				tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+				tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+			},
+		}
 	}
 
 	loggers := &SessionLoggers{
@@ -62,11 +86,8 @@ func main() {
 	}
 
 	be := &ProxyBackend{
-		loggers:  loggers,
-		domain:   config.Domain,
-		mappings: config.Mappings,
-
-		recipientDelimiter: config.RecipientDelimiter,
+		loggers: loggers,
+		config:  config,
 	}
 
 	s := smtp.NewServer(be)
@@ -77,11 +98,26 @@ func main() {
 	s.WriteTimeout = time.Duration(config.WriteTimeout)
 	s.MaxMessageBytes = int(config.MaxMessageBytes)
 	s.MaxRecipients = config.MaxRecipients
-	s.AuthDisabled = true
+	s.AllowInsecureAuth = true
 	s.TLSConfig = tlsConfig
 
+	s.EnableAuth(sasl.Login, func(conn *smtp.Conn) sasl.Server {
+		return sasl.NewLoginServer(func(username, password string) error {
+			return conn.Session().AuthPlain(username, password)
+		})
+	})
+
 	log.Info("Starting server", "address", s.Addr)
-	if err := ListenAndServe(s, loggers); err != nil {
+	log.Info("Config", "tls", config.Tls, "upstream", config.Upstream, "upstream_tls", config.UpstreamTls)
+
+	switch config.Tls {
+	case TlsModeNone, TlsModeStartTls:
+		err = ListenAndServe(s, loggers)
+	case TlsModeSmtps:
+		err = ListenAndServeTLS(s, loggers)
+	}
+
+	if err != nil {
 		log.Error("Failed to start server", "error", err)
 		os.Exit(1)
 	}
@@ -99,6 +135,24 @@ func ListenAndServe(s *smtp.Server, loggers *SessionLoggers) error {
 	}
 
 	l, err := net.Listen(network, addr)
+	if err != nil {
+		return err
+	}
+
+	return s.Serve(&SessionListener{l: l, loggers: loggers})
+}
+
+func ListenAndServeTLS(s *smtp.Server, loggers *SessionLoggers) error {
+	if s.LMTP {
+		return fmt.Errorf("Cannot use LMTP and TLS")
+	}
+
+	addr := s.Addr
+	if addr == "" {
+		addr = ":smtps"
+	}
+
+	l, err := tls.Listen("tcp", addr, s.TLSConfig)
 	if err != nil {
 		return err
 	}

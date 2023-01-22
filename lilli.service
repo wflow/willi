@@ -3,11 +3,11 @@ Description=SMTP Proxy
 After=network.target
 
 [Service]
-User=willi
-WorkingDirectory=/opt/willi
-ExecStart=/opt/willi/willi -c ./etc/willi.conf
+User=lilli
+WorkingDirectory=/opt/lilli
+ExecStart=/opt/lilli/lilli -c ./etc/lilli.conf
 AmbientCapabilities=CAP_NET_BIND_SERVICE
-SyslogIdentifier=willi
+SyslogIdentifier=lilli
 SyslogFacility=mail
 Restart=on-failure
 RestartSec=5s

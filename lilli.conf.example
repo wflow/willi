@@ -1,0 +1,36 @@
+# Example config file for lilli smtp proxy.
+#
+# All values are optional unless noted otherwise. Default values are shown.
+
+# Log level: debug, info, warn, error
+#loglevel: info
+
+# IP/port to listen on. E.g. ":25", "127.0.0.1:25", "[::1]:25"
+#listen: ":25"
+
+# Enable TLS support for listening socket. One of: none, smtps, starttls
+#tls: none
+
+# If TLS support is enabled, uncomment the following to provide the certificate
+#tls_cert: ssl-cert-snakeoil.pem
+#tls_key: ssl-cert-snakeoil.key
+
+# Upstream SMTP server to use
+upstream: "mail.example.org:25"
+
+# Enable TLS support for upstream connection. One of: none, smtps, starttls
+#upstream_tls: none
+
+# Enable/Disable verification of upstream certificate
+#upstream_verify_tls: true
+
+# Domain used in SMTP banner. If not set, the system hostname is used.
+#domain:
+
+# Client timeouts
+#read_timeout: 10s
+#write_timeout: 10s
+
+# Message limits
+#max_message_bytes: 20mib
+#max_recipients: 50

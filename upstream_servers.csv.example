@@ -1,6 +1,0 @@
-pattern;server;tls_verify
-somedomain.com;mail.somedomain.com
-user@somedomain.com;mail.other.org:25;false
-otherdomain.net;mail.other.org:5025;true
-
-# Comments and empty lines are ignored
