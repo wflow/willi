@@ -77,6 +77,7 @@ func main() {
 	s.WriteTimeout = time.Duration(config.WriteTimeout)
 	s.MaxMessageBytes = int(config.MaxMessageBytes)
 	s.MaxRecipients = config.MaxRecipients
+	s.EnableSMTPUTF8 = true
 	s.AuthDisabled = true
 	s.TLSConfig = tlsConfig
 
